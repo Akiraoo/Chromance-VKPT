@@ -1,5 +1,6 @@
 #ifndef CHR_CLOUDS_GLSL
 #define CHR_CLOUDS_GLSL
+#include "lib/origin.glsl"
 
 // Volumetric clouds.
 //
@@ -149,7 +150,7 @@ ChrCloudResult chrCloudMarch(ChrPalette pal, vec3 originRel, vec3 dir, int steps
     r.scatter = vec3(0.0);
     r.transmittance = 1.0;
 
-    vec3 o = originRel + vec3(worldUBO.cameraPos.xyz);
+    vec3 o = originRel + chrWrappedCamera(worldUBO.cameraPos.xyz);
     if (abs(dir.y) < 1e-4) { return r; }
     float t0 = (CHR_CLOUD_BOTTOM - o.y) / dir.y;
     float t1 = (CHR_CLOUD_TOP - o.y) / dir.y;
@@ -205,7 +206,7 @@ ChrCloudResult chrCloudMarch(ChrPalette pal, vec3 originRel, vec3 dir, int steps
 const float CHR_CLOUD_SHADOW_RANGE = 2048.0;
 
 vec2 chrCloudShadowCentre() {
-    return floor(vec2(worldUBO.cameraPos.xz) / 8.0) * 8.0;
+    return floor(chrWrappedCamera(worldUBO.cameraPos.xyz).xz / 8.0) * 8.0;
 }
 
 // Transmittance for the light ray through the cloud layer that crosses mid height at absolute XZ.
@@ -235,7 +236,7 @@ layout(set = CHR_CLOUD_TEX_SET, binding = CHR_CLOUD_SHADOW_BINDING) uniform samp
 // Sunlight let through by the clouds at a camera-relative position (1 = no cloud).
 float chrCloudShadowAt(vec3 pRel, vec3 L) {
     if (L.y < 0.05) { return 1.0; }
-    vec3 pAbs = pRel + vec3(worldUBO.cameraPos.xyz);
+    vec3 pAbs = pRel + chrWrappedCamera(worldUBO.cameraPos.xyz);
     if (pAbs.y > CHR_CLOUD_MID) { return 1.0; }
     vec2 midXZ = pAbs.xz + L.xz * ((CHR_CLOUD_MID - pAbs.y) / L.y);
     // Read from the cloud shadow map rendered once per frame (sky/cloud_shadow.frag): one texture fetch instead of

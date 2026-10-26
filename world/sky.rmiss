@@ -46,9 +46,15 @@ void main() {
                 // Volumetric clouds for camera rays and mirror-like reflections (fewer samples in reflections).
                 bool cameraRay = chrHasBit(ray, CHR_CAMERA_SEGMENT_BIT);
                 // The sky is accumulated over frames (cloud/temporal.comp), so fewer samples per frame suffice.
-                int steps = cameraRay ? clamp(int(float(CHR_CLOUD_STEPS) * 0.6), 8, 64) : clamp(int(CHR_CLOUD_STEPS) / 4, 5, 24);
-                uint h = xxhash32(uvec3(gl_LaunchIDEXT.xy, worldUBO.seed));
-                float jitter = float(h & 0xffffu) / 65536.0;
+                // Reflections are not accumulated by the sky TAA; per-pixel random jitter there left grainy clouds that
+                // the denoiser, with its long history on calm water, smeared into a blocky mosaic. Reflections march
+                // with a fixed offset and a few more steps instead: smooth, noise-free and stable.
+                int steps = cameraRay ? clamp(int(float(CHR_CLOUD_STEPS) * 0.6), 8, 64) : clamp(int(CHR_CLOUD_STEPS) / 2, 8, 32);
+                float jitter = 0.5;
+                if (cameraRay) {
+                    uint h = xxhash32(uvec3(gl_LaunchIDEXT.xy, worldUBO.seed));
+                    jitter = float(h & 0xffffu) / 65536.0;
+                }
                 ChrCloudResult cloud = chrCloudMarch(pal, gl_WorldRayOriginEXT, dir, steps, jitter);
                 // Under the rain deck the sky that peeks out below the clouds at the horizon is dim too.
                 color *= mix(1.0, 0.55, chrCloudRain());

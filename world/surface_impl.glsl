@@ -5,6 +5,7 @@
 #define CHR_NEED_PREVIOUS_GEOMETRY
 #include "lib/resources_rt.glsl"
 #include "lib/payload.glsl"
+#include "lib/origin.glsl"
 #include "interface/random.glsl"
 #include "interface/ray_cone.glsl"
 #include "interface/color_space.glsl"
@@ -182,8 +183,13 @@ void main() {
         m.transmission = 1.0;
         m.ior = CHR_WATER_IOR;
         m.ao = 1.0;
+        // No glow from the water texture's specular map: a few of its texels carried an emission value, which made
+        // them glow faintly and marked them "emissive" in the segmentation mask, so the wave and ripple overlays
+        // skipped exactly those texels and the water showed its 16x16 pixel grid.
+        m.emission = 0.0;
+        albedoEmission = 0.0;
         if (abs(ng.y) > 0.7) {
-            vec3 absPos = hitPos + vec3(worldUBO.cameraPos.xyz);
+            vec3 absPos = hitPos + chrWrappedCamera(worldUBO.cameraPos.xyz);
             vec3 waveN = chrWaterNormal(absPos.xz, worldUBO.gameTime, distanceToCamera);
             float rainHere = clamp(skyUBO.rainGradient, 0.0, 1.0);
             if (rainHere > 0.001 && ng.y > 0.0 && bounce == 0u) {
@@ -220,7 +226,7 @@ void main() {
         float skyLight = rainMap.available ? 15.0 :
                          (bary.x * float(m0.lightUV.y) + bary.y * float(m1.lightUV.y) + bary.z * float(m2.lightUV.y)) / 16.0;
         float rippleRain = rainMap.available ? rainNow * rainMap.exposure : rainNow;
-        vec3 absPos = hitPos + vec3(worldUBO.cameraPos.xyz);
+        vec3 absPos = hitPos + chrWrappedCamera(worldUBO.cameraPos.xyz);
         ChrWetness w = chrRainWetness(absPos, ng, n, skyLight, rain, rippleRain, worldUBO.gameTime, bounce == 0u);
         if (w.wet > 0.0) {
             float porous = 1.0 - m.metallic;
@@ -262,7 +268,10 @@ void main() {
     ray.normal = n;
 
     ChrMaterial stored;
-    stored.albedo = vec4(isWater ? vec3(0.95, 0.98, 1.0) : m.albedo, albedoTex.a);
+    // Water: a flat, fully opaque albedo. The vanilla water texture's alpha varies from texel to texel; it ended up in
+    // the denoiser's albedo guide, and DLSS Ray Reconstruction (which trusts the guide as texture) painted those
+    // 16x16 texels back onto the calm water as a mosaic.
+    stored.albedo = isWater ? vec4(0.95, 0.98, 1.0, 1.0) : vec4(m.albedo, albedoTex.a);
     stored.f0 = m.f0;
     stored.roughness = m.perceptualRoughness;
     stored.metallic = m.metallic;

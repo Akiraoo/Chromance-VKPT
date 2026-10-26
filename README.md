@@ -2,6 +2,8 @@
 
 **English** · [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md)
 
+![Chromance-VKPT: a cherry grove at sunset](figures/hero.jpg)
+
 A path-traced shader pack for the [Radiance](https://github.com/Minecraft-Radiance) mod, written from scratch with a
 warm, stylised look in the spirit of popular rasterised shader packs, but lit entirely by real path tracing.
 
@@ -12,8 +14,16 @@ that shifts with the time of day, warm sunlight against blue shade. *Radiance* i
 and the physical quantity path tracing computes: the light travelling along every ray. **VKPT** stands for
 **Vulkan Path Tracing**, the technique behind it.
 
-> Status: **in development**. Core lighting, water, rain, clouds and eye adaptation are in; depth of field and
-> bloom are next (see the roadmap).
+> Status: **polishing**. All four development stages (core, water and rain, clouds, exposure and photo) are
+> done; work now goes into fixes and fine-tuning the look.
+
+## Screenshots
+
+| Village in the rain | Under water |
+| --- | --- |
+| ![Rain: ripples and reflections on the water](figures/rain.jpg) | ![Under water: light shafts and blue-green haze](figures/underwater.jpg) |
+
+![Night sky: moon, clouds and a coloured nebula](figures/night.jpg)
 
 ## Features
 
@@ -28,7 +38,10 @@ and the physical quantity path tracing computes: the light travelling along ever
 - **Sun and moon shape**: round discs or vanilla-style squares; the round moon shows its phase.
 - **labPBR 1.3**: smoothness, F0 and hardcoded metals, emission, subsurface (foliage back-lighting), normal maps
   and ambient occlusion.
-- **Sun shafts**: beams of sun and moon light through leaves, buildings and cloud gaps (Tyndall effect).
+- **Sun shafts**: beams of sun and moon light through leaves, buildings and cloud gaps (Tyndall effect), plus
+  screen-space shafts so the beams also show over open ground.
+- **Glass**: clear, tinted when stained; with a dark room or night behind it, glass turns into a mirror like a real
+  window.
 - **Water**: clear, biome-coloured water with reflection and refraction from above and below, gentle moving waves
   (drawn after denoising so they never freeze or smear), caustics on the sea floor, light shafts and a soft
   blue-green haze under water, clear refracting bubbles.
@@ -41,9 +54,14 @@ and the physical quantity path tracing computes: the light travelling along ever
 - **Eye adaptation**: stepping into daylight dazzles and settles quickly; darkness takes seconds to adjust to, and
   caves stay dark.
 - **Item and entity lights**: dropped light blocks (glowstone, torches, lanterns...) light their surroundings.
+- **Bloom and depth of field**: soft glow around bright light; optional depth of field with autofocus (on the
+  crosshair) or a fixed focus distance.
 - **Colour grading**: warm/cool split tone, filmic punch, contrast, saturation, vignette, film grain and a
   deband filter against 8-bit banding.
-- Works with Radiance's denoisers (DLSS Ray Reconstruction or NRD) and upscalers.
+- Works with Radiance's denoisers (DLSS Ray Reconstruction or NRD) and upscalers; DLSS Ray Reconstruction is
+  recommended.
+- **Far coordinates**: waves, ripples, caustics and clouds stay smooth even a million blocks from the origin
+  instead of breaking into a mosaic from float precision loss.
 
 ## Requirements
 
@@ -73,8 +91,9 @@ and the physical quantity path tracing computes: the light travelling along ever
 | Sky & Time of Day | Sun and moon shape and size, golden hour, blue hour, night brightness and colour, night nebula |
 | Fog & Water | Haze, water murkiness, biome water colour, waves, underwater light shafts, clouds, cloud coverage, quality and shadows |
 | Rain | Wet ground, puddles, ripples, rain streak amount and opacity |
-| Camera | Eye adaptation, its strength, dark limit and speed |
-| Color Grading | Contrast, saturation, vibrance, warm/cool split, punch, vignette, film grain |
+| Materials | labPBR texture filtering, normal map strength, glass reflection |
+| Camera | Eye adaptation, its strength, dark limit and speed; depth of field (autofocus, focus distance, strength) |
+| Color Grading | Bloom (strength, threshold), contrast, saturation, vibrance, warm/cool split, punch, vignette, film grain |
 
 Performance tips: *Indirect Bounces*, *Block Light Rays*, *Cloud Quality* and *Sun Shafts* have the largest cost.
 
@@ -83,7 +102,13 @@ Performance tips: *Indirect Bounces*, *Block Light Rays*, *Cloud Quality* and *S
 1. ~~Core: path tracing, labPBR, coloured lights, anti-flicker, time-of-day palette, sun / moon shape, night~~
 2. ~~Water and rain: waves, caustics, underwater look, biome water colour, wet ground and ripples, clear rain~~
 3. ~~Clouds: volumetric and block clouds with shadows~~
-4. Exposure and photo mode: ~~eye adaptation~~, ~~dropped item lights~~, depth of field, bloom
+4. ~~Exposure and photo mode: eye adaptation, dropped item lights, depth of field, bloom~~
+
+## Known limitations
+
+- Very far from the origin (around a million blocks and beyond), the positions of blocks and lights themselves are
+  limited by Minecraft's and Radiance's float precision, which a shader pack cannot fix. The pack's own patterns
+  (waves, clouds, ...) repeat every 16384 blocks and jump slightly where that line is crossed.
 
 ## Credits
 

@@ -11,6 +11,7 @@
 
 #include "common/shared.hpp"
 #include "lib/waves.glsl"
+#include "lib/origin.glsl"
 
 #ifndef CHR_POST_SCENE_BINDING
 #    define CHR_POST_SCENE_BINDING 4
@@ -74,7 +75,7 @@ void main() {
     if (!(depth > 0.0) || depth > 4096.0) { return; }
 
     vec3 worldPos = waveWorldPos(uv, depth);
-    vec3 absPos = worldPos + vec3(worldUBO.cameraPos.xyz);
+    vec3 absPos = worldPos + chrWrappedCamera(worldUBO.cameraPos.xyz);
     vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
     vec3 toEye = eye - worldPos;
     float dist = length(toEye);

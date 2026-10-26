@@ -12,6 +12,7 @@
 
 #include "common/shared.hpp"
 #include "lib/rain.glsl"
+#include "lib/origin.glsl"
 
 #ifndef CHR_POST_SCENE_BINDING
 #    define CHR_POST_SCENE_BINDING 4
@@ -111,7 +112,7 @@ void main() {
     if (!(depth > 0.0) || depth > 4096.0) { return; }
 
     vec3 worldPos = rippleWorldPos(uv, depth);
-    vec3 absPos = worldPos + vec3(worldUBO.cameraPos.xyz);
+    vec3 absPos = worldPos + chrWrappedCamera(worldUBO.cameraPos.xyz);
     vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
     vec3 toEye = eye - worldPos;
     float dist = length(toEye);
@@ -128,7 +129,7 @@ void main() {
 
     // Faint light-blue lines, like the sky caught on the edge of each ring. Brighter on bright water, never harsh.
     vec3 tint = vec3(0.72, 0.86, 1.0);
-    float base = 0.10 + 0.5 * dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float base = 0.22 + 0.45 * dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722));
     vec3 color = scene.rgb + tint * rings * base * 0.6;
     outColor = vec4(clamp(color, vec3(0.0), vec3(1.0)), scene.a);
 }

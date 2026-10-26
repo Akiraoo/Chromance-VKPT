@@ -7,6 +7,7 @@
 // the weather pass (post_scene_color) and writes the result without blending.
 
 #include "common/shared.hpp"
+#include "lib/origin.glsl"
 
 #ifndef CHR_POST_SCENE_BINDING
 #    define CHR_POST_SCENE_BINDING 4
@@ -47,7 +48,7 @@ void main() {
 
 #ifndef CHR_RAIN_PARTICLE
     // Keep or drop whole streak columns with a stable hash so the remaining drops do not flicker.
-    vec2 column = floor(pos.xz + vec2(worldUBO.cameraPos.xz));
+    vec2 column = chrWrappedColumn(pos.xz, worldUBO.cameraPos.xz);
     if (rainHash(column) > float(CHR_RAIN_AMOUNT)) { discard; }
 #endif
 

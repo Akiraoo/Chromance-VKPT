@@ -31,6 +31,12 @@
 #ifndef CHR_GRADE_PUNCH
 #    define CHR_GRADE_PUNCH 0.5
 #endif
+#ifndef CHR_BLOOM_ENABLED
+#    define CHR_BLOOM_ENABLED 0
+#endif
+#ifndef CHR_BLOOM_STRENGTH
+#    define CHR_BLOOM_STRENGTH 0.5
+#endif
 #ifndef CHR_GRADE_FILM_GRAIN
 #    define CHR_GRADE_FILM_GRAIN 0.0
 #endif
@@ -45,6 +51,14 @@ layout(set = 1, binding = 1) uniform SkyUniform {
 
 // "post_scene_color" is a texture name Radiance recognises: it is backed by a full-resolution copy of out:ldr.
 layout(set = 4, binding = CHR_POST_SCENE_BINDING) uniform sampler2D gradeScene;
+
+#if CHR_BLOOM_ENABLED
+layout(set = 4, binding = 13) uniform sampler2D bloomA;
+layout(set = 4, binding = 14) uniform sampler2D bloomB;
+layout(set = 4, binding = 15) uniform sampler2D bloomC;
+#endif
+
+layout(set = 3, binding = 5, r8ui) readonly uniform uimage2D gradeSegmentation;
 
 layout(location = 0) out vec4 outColor;
 
@@ -97,7 +111,12 @@ void main() {
     // (rainy sky, fog, dusk) arrive as wide steps. Look at 8 pixels at random distances up to 64 pixels away and
     // average the ones that are within a couple of 8-bit steps of this pixel: inside a gradient that melts the steps
     // into a smooth ramp, while real detail (and rain streaks) differs by more and is left out of the average.
-    {
+    // Water is skipped: its faint rain rings and wave bands are only a step or two apart in 8 bits, and averaging
+    // them away in some places but not others left blotchy squares on the water.
+    ivec2 segSize = imageSize(gradeSegmentation);
+    ivec2 segPixel = clamp(ivec2(uv * vec2(segSize)), ivec2(0), max(segSize - ivec2(1), ivec2(0)));
+    bool gradeWater = segSize.x > 0 && (imageLoad(gradeSegmentation, segPixel).r & 48u) != 0u;
+    if (!gradeWater) {
         vec3 c = scene.rgb;
         vec3 sum = c;
         float count = 1.0;
@@ -118,6 +137,16 @@ void main() {
         if (count >= 7.0) { scene.rgb = sum / count; }
     }
 
+#if CHR_BLOOM_ENABLED
+    {
+        // Bloom: the three blurred levels of the bright parts, widest last, added in linear light and gently
+        // compressed so they glow rather than clip.
+        vec3 bloom = texture(bloomA, uv).rgb * 0.45 + texture(bloomB, uv).rgb * 0.35 + texture(bloomC, uv).rgb * 0.30;
+        bloom = bloom / (1.0 + bloom);
+        vec3 lin = gradeToLinear(scene.rgb) + bloom * max(float(CHR_BLOOM_STRENGTH), 0.0) * 0.5;
+        scene.rgb = gradeToSrgb(lin);
+    }
+#endif
     float rain = clamp(skyUBO.rainGradient, 0.0, 1.0) * (skyUBO.cameraSubmersionType == 3u ? 1.0 : 0.0);
     vec3 color = gradeContrast(scene.rgb, float(CHR_GRADE_CONTRAST));
     vec3 linearColor = gradeSaturation(gradeToLinear(color), rain);

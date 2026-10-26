@@ -17,6 +17,7 @@
 
 #include "lib/resources_rt.glsl"
 #include "lib/payload.glsl"
+#include "lib/origin.glsl"
 #include "interface/random.glsl"
 #include "interface/ray_cone.glsl"
 #include "interface/color_space.glsl"
@@ -340,7 +341,7 @@ vec3 chrUnderwaterShafts(ChrPalette pal, vec3 dir, float dist, vec3 absorb) {
         float below = surfaceY - x.y;
         if (below <= 0.0) { continue; }
         float toSurface = below / L.y;
-        vec3 crossing = x + L * toSurface + vec3(worldUBO.cameraPos.xyz);
+        vec3 crossing = x + L * toSurface + chrWrappedCamera(worldUBO.cameraPos.xyz);
         // Caustics of the longer waves, and only their focused part: dark gaps between the beams.
         float c = chrCausticFast(crossing.xz, t, min(below, 8.0), 0.3);
         float beam = max(c - 1.05, 0.0);

@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "common/shared.hpp"
+#include "lib/origin.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
 
@@ -72,7 +73,7 @@ void main() {
     }
     if (color.a < 0.1) { discard; }
 #if CHR_POST_WEATHER
-    vec2 column = floor(pos.xz + vec2(worldUBO.cameraPos.xz));
+    vec2 column = chrWrappedColumn(pos.xz, worldUBO.cameraPos.xz);
     if (chrColumnHash(column) > float(CHR_RAIN_AMOUNT)) { discard; }
 #endif
     if (useColorLayer > 0) { color *= colorLayer; }

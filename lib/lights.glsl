@@ -144,7 +144,7 @@ vec3 chrSampleCelestialLight(ChrPalette pal, ChrSurface s, vec3 p, vec3 n, vec3 
 // One block light sample (resampled from CHR_BLOCK_LIGHT_CANDIDATES candidates) with its shadow ray.
 vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opaque, bool insideBoat,
                          inout uint seed) {
-    ivec3 center = ivec3(floor((vec3(worldUBO.cameraPos.xyz) + p) / 16.0));
+    ivec3 center = ivec3(floor((worldUBO.cameraPos.xyz + dvec3(p)) / 16.0));
 
     // Gather the sections around the point that contain lights.
     uint sectionIndex[27];
@@ -172,7 +172,7 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
     }
     if (total == 0u) { return vec3(0.0); }
 
-    vec3 cameraPos = vec3(worldUBO.cameraPos.xyz);
+    dvec3 cameraPos = worldUBO.cameraPos.xyz;
     float strength = max(float(CHR_BLOCK_LIGHT_STRENGTH), 0.0);
     int candidates = clamp(int(CHR_BLOCK_LIGHT_CANDIDATES), 1, 32);
 
@@ -199,7 +199,7 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
         float r1 = sqrt(rand(seed));
         float r2 = rand(seed);
         vec3 lp = light.p0Area.xyz * (1.0 - r1) + light.p1.xyz * (r1 * (1.0 - r2)) + light.p2.xyz * (r1 * r2);
-        vec3 toLight = lp - cameraPos - p;
+        vec3 toLight = vec3(dvec3(lp) - cameraPos) - p;
         float dist2 = dot(toLight, toLight);
         float dist = sqrt(dist2);
         if (dist <= 1e-3) { continue; }
