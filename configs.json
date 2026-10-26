@@ -1,0 +1,1319 @@
+{
+  "radiance": {
+    "shader_pack": true,
+    "display_name": "§c§lC§6§lh§e§lr§a§lo§b§lm§9§la§d§lnce§r §8VKPT"
+  },
+  "requires_emission": true,
+  "segmentation_mask": {
+    "enabled": true
+  },
+  "acceleration_structure_build_mode": "sync",
+  "nrd_mode": "probabilistic",
+  "attributes": [
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_indirect_bounces",
+      "description": "render_pipeline.module.main_render.attribute.chr_indirect_bounces.description",
+      "type": "int_range:0-4",
+      "default_value": "2",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "high",
+      "define": "CHR_INDIRECT_BOUNCES"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_sun_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_sun_strength.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_SUN_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_moon_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_moon_strength.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_MOON_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_entity_light_boost",
+      "description": "render_pipeline.module.main_render.attribute.chr_entity_light_boost.description",
+      "type": "float_range:0.0-16.0",
+      "default_value": "6.0",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_ENTITY_LIGHT_BOOST"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_sky_light_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_sky_light_strength.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_SKY_LIGHT_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_sky_gi_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_sky_gi_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "0.4",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_SKY_GI_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_air_god_rays",
+      "description": "render_pipeline.module.main_render.attribute.chr_air_god_rays.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "0.5",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "medium",
+      "define": "CHR_AIR_GOD_RAYS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_sun_softness",
+      "description": "render_pipeline.module.main_render.attribute.chr_sun_softness.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_SUN_SOFTNESS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_minimum_light",
+      "description": "render_pipeline.module.main_render.attribute.chr_minimum_light.description",
+      "type": "float_range:0.0-10.0",
+      "default_value": "0.4",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": {
+        "CHR_MINIMUM_LIGHT": "((X) * 0.001)"
+      }
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_indirect_clamp",
+      "description": "render_pipeline.module.main_render.attribute.chr_indirect_clamp.description",
+      "type": "float_range:0.5-32.0",
+      "default_value": "4.0",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_INDIRECT_CLAMP"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_block_light_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_block_light_strength.description",
+      "type": "float_range:0.0-32.0",
+      "default_value": "10.0",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_BLOCK_LIGHT_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_block_light_range",
+      "description": "render_pipeline.module.main_render.attribute.chr_block_light_range.description",
+      "type": "float_range:4.0-32.0",
+      "default_value": "12.0",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_BLOCK_LIGHT_RANGE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_block_light_candidates",
+      "description": "render_pipeline.module.main_render.attribute.chr_block_light_candidates.description",
+      "type": "int_range:1-16",
+      "default_value": "6",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "medium",
+      "define": "CHR_BLOCK_LIGHT_CANDIDATES"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_block_light_samples",
+      "description": "render_pipeline.module.main_render.attribute.chr_block_light_samples.description",
+      "type": "int_range:1-8",
+      "default_value": "2",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "high",
+      "define": "CHR_BLOCK_LIGHT_SAMPLES"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_light_sample_clamp",
+      "description": "render_pipeline.module.main_render.attribute.chr_light_sample_clamp.description",
+      "type": "float_range:0.5-50.0",
+      "default_value": "2.7",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_LIGHT_SAMPLE_CLAMP"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_block_light_bounces",
+      "description": "render_pipeline.module.main_render.attribute.chr_block_light_bounces.description",
+      "type": "int_range:0-3",
+      "default_value": "2",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "medium",
+      "define": "CHR_BLOCK_LIGHT_BOUNCES"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_emissive_brightness",
+      "description": "render_pipeline.module.main_render.attribute.chr_emissive_brightness.description",
+      "type": "float_range:0.0-16.0",
+      "default_value": "2.0",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_EMISSIVE_BRIGHTNESS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_celestial_shape",
+      "description": "render_pipeline.module.main_render.attribute.chr_celestial_shape.description",
+      "type": "enum:render_pipeline.module.main_render.attribute.chr_celestial_shape.round-render_pipeline.module.main_render.attribute.chr_celestial_shape.square",
+      "default_value": "render_pipeline.module.main_render.attribute.chr_celestial_shape.round",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": {
+        "CHR_CELESTIAL_SHAPE": "uint(X)"
+      }
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_sun_size",
+      "description": "render_pipeline.module.main_render.attribute.chr_sun_size.description",
+      "type": "float_range:0.3-3.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_SUN_SIZE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_moon_size",
+      "description": "render_pipeline.module.main_render.attribute.chr_moon_size.description",
+      "type": "float_range:0.3-3.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_MOON_SIZE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_golden_hour_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_golden_hour_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_GOLDEN_HOUR_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_blue_hour_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_blue_hour_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_BLUE_HOUR_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_nebula_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_nebula_strength.description",
+      "type": "float_range:0.0-3.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_NEBULA_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_night_brightness",
+      "description": "render_pipeline.module.main_render.attribute.chr_night_brightness.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "0.3",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_NIGHT_BRIGHTNESS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_night_desaturation",
+      "description": "render_pipeline.module.main_render.attribute.chr_night_desaturation.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.75",
+      "group": "shader_pack_settings_screen.group.sky",
+      "performance_impact": "low",
+      "define": "CHR_NIGHT_DESATURATION"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_fog_density",
+      "description": "render_pipeline.module.main_render.attribute.chr_fog_density.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_FOG_DENSITY"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_fog_density",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_fog_density.description",
+      "type": "float_range:0.0-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_WATER_FOG_DENSITY"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_wave_overlay",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_wave_overlay.description",
+      "type": "bool",
+      "default_value": "render_pipeline.true",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_WATER_WAVE_OVERLAY"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_wave_overlay_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_wave_overlay_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_WATER_WAVE_OVERLAY_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_biome_tint",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_biome_tint.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.6",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_WATER_BIOME_TINT"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_god_rays",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_god_rays.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "0.4",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "medium",
+      "define": "CHR_WATER_GOD_RAYS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_rain_wetness",
+      "description": "render_pipeline.module.main_render.attribute.chr_rain_wetness.description",
+      "type": "bool",
+      "default_value": "render_pipeline.true",
+      "group": "shader_pack_settings_screen.group.weather",
+      "performance_impact": "low",
+      "define": "CHR_RAIN_WETNESS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_puddle_amount",
+      "description": "render_pipeline.module.main_render.attribute.chr_puddle_amount.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.5",
+      "group": "shader_pack_settings_screen.group.weather",
+      "performance_impact": "low",
+      "define": "CHR_PUDDLE_AMOUNT"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_ripple_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_ripple_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.weather",
+      "performance_impact": "low",
+      "define": "CHR_RIPPLE_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_rain_amount",
+      "description": "render_pipeline.module.main_render.attribute.chr_rain_amount.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.45",
+      "group": "shader_pack_settings_screen.group.weather",
+      "performance_impact": "low",
+      "define": "CHR_RAIN_AMOUNT"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_rain_opacity",
+      "description": "render_pipeline.module.main_render.attribute.chr_rain_opacity.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.4",
+      "group": "shader_pack_settings_screen.group.weather",
+      "performance_impact": "low",
+      "define": "CHR_RAIN_OPACITY"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_cloud_mode",
+      "description": "render_pipeline.module.main_render.attribute.chr_cloud_mode.description",
+      "type": "enum:render_pipeline.module.main_render.attribute.chr_clouds.off-render_pipeline.module.main_render.attribute.chr_clouds.block-render_pipeline.module.main_render.attribute.chr_clouds.volumetric",
+      "default_value": "render_pipeline.module.main_render.attribute.chr_clouds.volumetric",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "medium",
+      "define": {
+        "CHR_CLOUD_MODE": "uint(X)"
+      }
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_cloud_coverage",
+      "description": "render_pipeline.module.main_render.attribute.chr_cloud_coverage.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.45",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_CLOUD_COVERAGE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_cloud_steps",
+      "description": "render_pipeline.module.main_render.attribute.chr_cloud_steps.description",
+      "type": "int_range:8-96",
+      "default_value": "32",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "high",
+      "define": "CHR_CLOUD_STEPS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.85",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_CLOUD_SHADOW_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_pbr_filter",
+      "description": "render_pipeline.module.main_render.attribute.chr_pbr_filter.description",
+      "type": "enum:render_pipeline.module.main_render.attribute.chr_pbr_filter.nearest-render_pipeline.module.main_render.attribute.chr_pbr_filter.bilinear",
+      "default_value": "render_pipeline.module.main_render.attribute.chr_pbr_filter.nearest",
+      "group": "shader_pack_settings_screen.group.materials",
+      "performance_impact": "low",
+      "define": {
+        "CHR_PBR_FILTER": "uint(X)"
+      }
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_glass_reflection",
+      "description": "render_pipeline.module.main_render.attribute.chr_glass_reflection.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.7",
+      "group": "shader_pack_settings_screen.group.materials",
+      "performance_impact": "low",
+      "define": "CHR_GLASS_REFLECTION"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_normal_map_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_normal_map_strength.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.materials",
+      "performance_impact": "low",
+      "define": "CHR_NORMAL_MAP_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_eye_adaptation",
+      "description": "render_pipeline.module.main_render.attribute.chr_eye_adaptation.description",
+      "type": "bool",
+      "default_value": "render_pipeline.true",
+      "group": "shader_pack_settings_screen.group.camera",
+      "performance_impact": "low",
+      "define": "CHR_EYE_ADAPTATION"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_strength",
+      "description": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_strength.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.5",
+      "group": "shader_pack_settings_screen.group.camera",
+      "performance_impact": "low",
+      "define": "CHR_EYE_ADAPTATION_STRENGTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_max_ev",
+      "description": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_max_ev.description",
+      "type": "float_range:0.0-3.0",
+      "default_value": "0.75",
+      "group": "shader_pack_settings_screen.group.camera",
+      "performance_impact": "low",
+      "define": "CHR_EYE_ADAPTATION_MAX_EV"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_speed",
+      "description": "render_pipeline.module.main_render.attribute.chr_eye_adaptation_speed.description",
+      "type": "float_range:0.25-4.0",
+      "default_value": "1.0",
+      "group": "shader_pack_settings_screen.group.camera",
+      "performance_impact": "low",
+      "define": "CHR_EYE_ADAPTATION_SPEED"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_enabled",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_enabled.description",
+      "type": "bool",
+      "default_value": "render_pipeline.true",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_ENABLED"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_contrast",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_contrast.description",
+      "type": "float_range:0.5-1.8",
+      "default_value": "1.12",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_CONTRAST"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_saturation",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_saturation.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.08",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_SATURATION"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_vibrance",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_vibrance.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "1.15",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_VIBRANCE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_warmth",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_warmth.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.6",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_WARMTH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_punch",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_punch.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.5",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_PUNCH"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_vignette",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_vignette.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "0.35",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_VIGNETTE"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_grade_film_grain",
+      "description": "render_pipeline.module.main_render.attribute.chr_grade_film_grain.description",
+      "type": "float_range:0.0-2.0",
+      "default_value": "0.0",
+      "group": "shader_pack_settings_screen.group.post_processing",
+      "performance_impact": "low",
+      "define": "CHR_GRADE_FILM_GRAIN"
+    }
+  ],
+  "textures": [
+    {
+      "name": "sky_cube",
+      "type": "intermediate",
+      "dimension": "cube",
+      "format": "R16G16B16A16_SFLOAT",
+      "width": 128,
+      "height": 128,
+      "sampled_binding": 2,
+      "filter": "linear"
+    },
+    {
+      "name": "cloud_shape_noise",
+      "type": "file",
+      "path": "textures/cloud_shape_noise.raw",
+      "dimension": "3d",
+      "format": "R8_UNORM",
+      "width": 128,
+      "height": 128,
+      "depth": 128,
+      "sampled_binding": 7,
+      "filter": "linear",
+      "address_mode": "repeat"
+    },
+    {
+      "name": "cloud_detail_noise",
+      "type": "file",
+      "path": "textures/cloud_detail_noise.raw",
+      "dimension": "3d",
+      "format": "R8_UNORM",
+      "width": 64,
+      "height": 64,
+      "depth": 64,
+      "sampled_binding": 8,
+      "filter": "linear",
+      "address_mode": "repeat"
+    },
+    {
+      "name": "cloud_shadow",
+      "type": "intermediate",
+      "format": "R16_SFLOAT",
+      "width": 512,
+      "height": 512,
+      "sampled_binding": 9,
+      "filter": "linear",
+      "address_mode": "clamp_to_edge"
+    },
+    {
+      "name": "eye_exposure",
+      "type": "intermediate",
+      "format": "R32G32B32A32_SFLOAT",
+      "width": 1,
+      "height": 1,
+      "shared": true,
+      "sampled_binding": 10,
+      "storage_binding": 11,
+      "filter": "nearest",
+      "address_mode": "clamp_to_edge"
+    },
+    {
+      "name": "cloud_history",
+      "type": "intermediate",
+      "shared": true,
+      "dimension": "2d_array",
+      "format": "R16G16B16A16_SFLOAT",
+      "width": "RENDER_WIDTH",
+      "height": "RENDER_HEIGHT",
+      "depth": 2,
+      "storage_binding": 12
+    },
+    {
+      "name": "post_scene_color",
+      "type": "intermediate",
+      "format": "R8G8B8A8_UNORM",
+      "scale": 1,
+      "sampled_binding": 4,
+      "filter": "nearest",
+      "address_mode": "clamp_to_edge"
+    }
+  ],
+  "execution": {
+    "global_variables": [
+      {
+        "CHR_FRAME_READY": true
+      },
+      {
+        "CHR_CLOUD_HISTORY_PING": true
+      },
+      {
+        "CHR_CLOUD_HISTORY_READY": false
+      }
+    ],
+    "commands": [
+      {
+        "pass": "sky_cube"
+      },
+      {
+        "if_else": {
+          "condition": "CHR_CLOUD_MODE == 2",
+          "then": [
+            {
+              "pass": "cloud_shadow"
+            }
+          ],
+          "else": []
+        }
+      },
+      {
+        "pass": "world"
+      },
+      {
+        "if_else": {
+          "condition": "CHR_CLOUD_MODE == 2",
+          "then": [
+            {
+              "pass": "cloud_temporal"
+            },
+            {
+              "assign": {
+                "CHR_CLOUD_HISTORY_PING": "!CHR_CLOUD_HISTORY_PING"
+              }
+            },
+            {
+              "assign": {
+                "CHR_CLOUD_HISTORY_READY": true
+              }
+            }
+          ],
+          "else": [
+            {
+              "assign": {
+                "CHR_CLOUD_HISTORY_READY": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "if_else": {
+          "condition": "CHR_EYE_ADAPTATION != 0",
+          "then": [
+            {
+              "pass": "eye_adaptation"
+            }
+          ],
+          "else": []
+        }
+      }
+    ]
+  },
+  "execution_post": {
+    "global_variables": [
+      {
+        "CHR_POST_READY": true
+      }
+    ],
+    "commands": [
+      {
+        "if_else": {
+          "condition": "CHR_WATER_WAVE_OVERLAY != 0",
+          "then": [
+            {
+              "pass": "post_copy_scene"
+            },
+            {
+              "pass": "post_water_waves"
+            }
+          ],
+          "else": []
+        }
+      },
+      {
+        "pass": "post_copy_scene"
+      },
+      {
+        "pass": "post_rain_ripple"
+      },
+      {
+        "pass": "post_copy_scene"
+      },
+      {
+        "pass": "post_render_particle"
+      },
+      {
+        "pass": "post_copy_scene"
+      },
+      {
+        "pass": "post_render_weather"
+      },
+      {
+        "pass": "post_world_overlay"
+      },
+      {
+        "pass": "post_render_text"
+      },
+      {
+        "pass": "post_render_name_tag"
+      },
+      {
+        "pass": "post_render_star"
+      },
+      {
+        "if_else": {
+          "condition": "CHR_GRADE_ENABLED != 0",
+          "then": [
+            {
+              "pass": "post_copy_scene"
+            },
+            {
+              "pass": "post_grade"
+            }
+          ],
+          "else": []
+        }
+      }
+    ]
+  },
+  "passes": [
+    {
+      "type": "full_screen",
+      "name": "sky_cube",
+      "fragment": "sky/sky_cube.frag",
+      "inputs": {
+        "images": []
+      },
+      "outputs": {
+        "images": [
+          "sky_cube"
+        ]
+      },
+      "target": "sky_cube"
+    },
+    {
+      "type": "full_screen",
+      "name": "cloud_shadow",
+      "fragment": "sky/cloud_shadow.frag",
+      "inputs": {
+        "images": [
+          "cloud_shape_noise",
+          "cloud_detail_noise"
+        ]
+      },
+      "outputs": {
+        "images": [
+          "cloud_shadow"
+        ]
+      },
+      "target": "cloud_shadow"
+    },
+    {
+      "type": "ray_tracing",
+      "name": "world",
+      "max_ray_recursion_depth": 2,
+      "inputs": {
+        "images": [
+          "sky_cube",
+          "cloud_shape_noise",
+          "cloud_detail_noise",
+          "cloud_shadow",
+          "eye_exposure"
+        ]
+      },
+      "outputs": {
+        "images": [
+          "out:radiance",
+          "out:diffuse_albedo_metallic",
+          "out:specular_albedo",
+          "out:normal_roughness",
+          "out:motion_vector",
+          "out:linear_depth",
+          "out:first_hit_depth",
+          "out:indirect_specular_hit_distance",
+          "out:indirect_diffuse_hit_distance",
+          "out:indirect_diffuse_radiance",
+          "out:indirect_specular_radiance",
+          "out:first_hit_clear",
+          "out:first_hit_refraction",
+          "out:first_hit_base_emission",
+          "out:fog_image"
+        ]
+      },
+      "rgen": "world/world.rgen",
+      "default_hit_group": "default",
+      "hit_groups": {
+        "default": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/surface.rahit"
+          }
+        },
+        "entity_solid_z_offset_forward": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface_flat.rchit",
+            "rahit": "world/surface.rahit"
+          }
+        },
+        "shadow": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/shadow.rchit",
+            "rahit": "world/shadow.rahit"
+          }
+        },
+        "clouds": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/clouds.rchit",
+            "rahit": "world/clouds.rahit"
+          }
+        },
+        "end_gateway": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/end_gateway.rchit",
+            "rahit": "world/passthrough.rahit"
+          }
+        },
+        "end_portal": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/end_portal.rchit",
+            "rahit": "world/passthrough.rahit"
+          }
+        },
+        "water_mask": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/water_mask.rchit",
+            "rahit": "world/water_mask.rahit"
+          }
+        },
+        "world_no_reflect": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/emissive_only.rchit",
+            "rahit": "world/passthrough.rahit"
+          }
+        },
+        "lightning": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/transparent_only.rchit",
+            "rahit": "world/passthrough.rahit"
+          }
+        },
+        "beacon_beam": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/transparent_only.rchit",
+            "rahit": "world/passthrough.rahit"
+          }
+        },
+        "text_see_through": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/text.rahit"
+          }
+        },
+        "text_intensity_see_through": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/text.rahit"
+          }
+        },
+        "text_polygon_offset": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/text.rahit"
+          }
+        },
+        "text_intensity_polygon_offset": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/text.rahit"
+          }
+        }
+      },
+      "miss": [
+        {
+          "name": "shadow",
+          "shader": "world/shadow.rmiss"
+        },
+        {
+          "name": "world",
+          "shader": "world/sky.rmiss"
+        },
+        {
+          "name": "hand",
+          "shader": "world/hand.rmiss"
+        },
+        {
+          "name": "world_no_volumetric",
+          "shader": "world/sky.rmiss"
+        }
+      ]
+    },
+    {
+      "type": "compute",
+      "name": "cloud_temporal",
+      "compute": "cloud/temporal.comp",
+      "inputs": {
+        "images": [
+          "out:radiance",
+          "out:first_hit_clear",
+          "out:fog_image",
+          "cloud_history"
+        ]
+      },
+      "outputs": {
+        "images": [
+          "out:radiance",
+          "out:first_hit_clear",
+          "cloud_history"
+        ]
+      },
+      "gx": "(RENDER_WIDTH + 7) / 8",
+      "gy": "(RENDER_HEIGHT + 7) / 8",
+      "gz": "1"
+    },
+    {
+      "type": "compute",
+      "name": "eye_adaptation",
+      "compute": "exposure/adapt.comp",
+      "inputs": {
+        "images": [
+          "out:radiance",
+          "eye_exposure"
+        ]
+      },
+      "outputs": {
+        "images": [
+          "eye_exposure"
+        ]
+      },
+      "gx": "1",
+      "gy": "1",
+      "gz": "1"
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_render_particle",
+      "content": "particle",
+      "outputs": {
+        "images": [
+          "out:ldr"
+        ]
+      },
+      "pipeline": {
+        "default": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/world_post.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        },
+        "/particle/rain": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/splash": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/bubble": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/bubble_column_up": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/bubble_pop": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/current_down": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4",
+            "CHR_RAIN_PARTICLE": "1"
+          }
+        },
+        "/particle/underwater": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/discard.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        }
+      },
+      "inputs": {
+        "images": [
+          "post_scene_color"
+        ]
+      }
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_render_weather",
+      "content": "weather",
+      "outputs": {
+        "images": [
+          "out:ldr"
+        ]
+      },
+      "pipeline": {
+        "default": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/world_post.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_WEATHER": "1"
+          }
+        },
+        "/weather/rain": {
+          "shader": {
+            "vertex": "post/world_post.vert",
+            "fragment": "post/rain_refraction.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": false,
+          "cull": "none",
+          "front_face": "counter_clockwise",
+          "definitions": {
+            "CHR_POST_SCENE_BINDING": "4"
+          }
+        }
+      },
+      "inputs": {
+        "images": [
+          "post_scene_color"
+        ]
+      }
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_world_overlay",
+      "content": "world_overlay",
+      "outputs": {
+        "images": [
+          "out:ldr"
+        ]
+      },
+      "pipeline": {
+        "default": {
+          "shader": {
+            "vertex": "post/text.vert",
+            "fragment": "post/world_overlay.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less_or_equal",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        },
+        "/world_overlay/through": {
+          "shader": {
+            "vertex": "post/text.vert",
+            "fragment": "post/world_overlay.frag"
+          },
+          "depth_test": false,
+          "depth_write": false,
+          "depth_compare": "less_or_equal",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        }
+      }
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_render_text",
+      "content": "text",
+      "outputs": {
+        "images": [
+          "out:ldr",
+          "out:first_hit_depth"
+        ]
+      },
+      "pipeline": {
+        "default": {
+          "shader": {
+            "vertex": "post/text.vert",
+            "fragment": "post/text.frag"
+          },
+          "depth_test": true,
+          "depth_write": true,
+          "depth_compare": "less",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        }
+      }
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_render_name_tag",
+      "content": "name_tag",
+      "outputs": {
+        "images": [
+          "out:ldr",
+          "out:first_hit_depth"
+        ]
+      },
+      "pipeline": {
+        "default": {
+          "shader": {
+            "vertex": "post/text.vert",
+            "fragment": "post/text.frag"
+          },
+          "depth_test": true,
+          "depth_write": true,
+          "depth_compare": "always",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        }
+      }
+    },
+    {
+      "type": "render",
+      "stage": "post_render",
+      "name": "post_render_star",
+      "content": "star",
+      "outputs": {
+        "images": [
+          "out:ldr"
+        ]
+      },
+      "pipeline": {
+        "star": {
+          "shader": {
+            "vertex": "post/star.vert",
+            "fragment": "post/star.frag"
+          },
+          "depth_test": true,
+          "depth_write": false,
+          "depth_compare": "less",
+          "color_blend": true,
+          "cull": "none",
+          "front_face": "counter_clockwise"
+        }
+      }
+    },
+    {
+      "type": "full_screen",
+      "stage": "post_render",
+      "name": "post_water_waves",
+      "fragment": "post/water_waves.frag",
+      "inputs": {
+        "images": [
+          "post_scene_color"
+        ]
+      },
+      "target": "out:ldr",
+      "definitions": {
+        "CHR_POST_SCENE_BINDING": "4"
+      }
+    },
+    {
+      "type": "full_screen",
+      "stage": "post_render",
+      "name": "post_rain_ripple",
+      "fragment": "post/rain_ripple.frag",
+      "inputs": {
+        "images": [
+          "post_scene_color"
+        ]
+      },
+      "target": "out:ldr",
+      "definitions": {
+        "CHR_POST_SCENE_BINDING": "4"
+      }
+    },
+    {
+      "type": "full_screen",
+      "stage": "post_render",
+      "name": "post_copy_scene",
+      "fragment": "post/copy.frag",
+      "inputs": {
+        "images": [
+          "out:ldr"
+        ]
+      },
+      "target": "post_scene_color"
+    },
+    {
+      "type": "full_screen",
+      "stage": "post_render",
+      "name": "post_grade",
+      "fragment": "post/grade.frag",
+      "inputs": {
+        "images": [
+          "post_scene_color"
+        ]
+      },
+      "target": "out:ldr",
+      "definitions": {
+        "CHR_POST_SCENE_BINDING": "4"
+      }
+    }
+  ]
+}

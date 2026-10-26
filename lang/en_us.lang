@@ -1,0 +1,128 @@
+# Chromance-VKPT
+
+shader_pack_settings_screen.group.lighting=Lighting
+shader_pack_settings_screen.group.block_light=Block Lights
+shader_pack_settings_screen.group.sky=Sky & Time of Day
+shader_pack_settings_screen.group.atmosphere=Fog & Water
+shader_pack_settings_screen.group.weather=Rain
+shader_pack_settings_screen.group.materials=Materials
+shader_pack_settings_screen.group.camera=Camera
+shader_pack_settings_screen.group.post_processing=Color Grading
+
+render_pipeline.module.main_render.attribute.chr_indirect_bounces=Indirect Bounces
+render_pipeline.module.main_render.attribute.chr_indirect_bounces.description=How many times light bounces after the first surface. More bounces brighten indoor areas and cost performance.
+render_pipeline.module.main_render.attribute.chr_sun_strength=Sunlight Strength
+render_pipeline.module.main_render.attribute.chr_sun_strength.description=Brightness of direct sunlight.
+render_pipeline.module.main_render.attribute.chr_moon_strength=Moonlight Strength
+render_pipeline.module.main_render.attribute.chr_moon_strength.description=Brightness of moonlight. Kept dim by default so nights feel like night.
+render_pipeline.module.main_render.attribute.chr_entity_light_boost=Item & Entity Light
+render_pipeline.module.main_render.attribute.chr_entity_light_boost.description=Brightness of light from dropped light blocks (glowstone, torches, lanterns...), held items and glowing mobs. They are much smaller than the blocks they stand for, so they are boosted. 0 turns them off.
+render_pipeline.module.main_render.attribute.chr_sky_light_strength=Sky Light Strength
+render_pipeline.module.main_render.attribute.chr_sky_light_strength.description=Brightness of the sky dome, which lights shadows and indoor areas through openings.
+render_pipeline.module.main_render.attribute.chr_sky_gi_strength=Ambient Sky Light
+render_pipeline.module.main_render.attribute.chr_sky_gi_strength.description=How much the sky lights the world (shadows, indoors) compared with its own brightness. Lower makes the sun and moon the main light with clearer shadows.
+render_pipeline.module.main_render.attribute.chr_air_god_rays=Sun Shafts
+render_pipeline.module.main_render.attribute.chr_air_god_rays.description=Beams of sun or moon light in the air, broken up by leaves, buildings and clouds (Tyndall effect). 0 turns them off.
+render_pipeline.module.main_render.attribute.chr_sun_softness=Shadow Softness
+render_pipeline.module.main_render.attribute.chr_sun_softness.description=Size of the light source used for sun and moon shadows. Larger values blur shadow edges.
+render_pipeline.module.main_render.attribute.chr_minimum_light=Minimum Light
+render_pipeline.module.main_render.attribute.chr_minimum_light.description=A faint light everywhere so completely dark caves keep some shape. 0 = true darkness.
+render_pipeline.module.main_render.attribute.chr_indirect_clamp=Firefly Clamp
+render_pipeline.module.main_render.attribute.chr_indirect_clamp.description=Limits how much light one indirect bounce may add. Lower values remove sparkling noise but darken bright reflections.
+render_pipeline.module.main_render.attribute.chr_block_light_strength=Block Light Strength
+render_pipeline.module.main_render.attribute.chr_block_light_strength.description=How strongly torches, lanterns, glowstone and other emissive blocks light their surroundings.
+render_pipeline.module.main_render.attribute.chr_block_light_range=Block Light Range
+render_pipeline.module.main_render.attribute.chr_block_light_range.description=Distance in blocks after which block light fades to nothing. Small values give the "lighter in the dark" look.
+render_pipeline.module.main_render.attribute.chr_block_light_candidates=Block Light Samples
+render_pipeline.module.main_render.attribute.chr_block_light_candidates.description=Candidates considered per surface when choosing which light to sample. More = less noise near many lights.
+render_pipeline.module.main_render.attribute.chr_block_light_samples=Block Light Rays
+render_pipeline.module.main_render.attribute.chr_block_light_samples.description=Light samples (each with its own shadow ray) per pixel on the surfaces you see. More = cleaner torch light and fewer smeared glows, but slower.
+render_pipeline.module.main_render.attribute.chr_light_sample_clamp=Light Sample Limit
+render_pipeline.module.main_render.attribute.chr_light_sample_clamp.description=Caps how bright a single block light sample can be. Lower removes stray bright specks that the upscaler spreads into glows, but dims surfaces right next to lights.
+render_pipeline.module.main_render.attribute.chr_block_light_bounces=Block Light Sampling Depth
+render_pipeline.module.main_render.attribute.chr_block_light_bounces.description=On how many bounces block lights are sampled directly. 1 = direct light only, 2 = also light bouncing off walls. 0 = off (noisy).
+render_pipeline.module.main_render.attribute.chr_emissive_brightness=Emissive Surface Brightness
+render_pipeline.module.main_render.attribute.chr_emissive_brightness.description=How bright glowing surfaces themselves look (does not change how much they light the world).
+render_pipeline.module.main_render.attribute.chr_celestial_shape=Sun & Moon Shape
+render_pipeline.module.main_render.attribute.chr_celestial_shape.description=Round discs, or squares like vanilla Minecraft.
+render_pipeline.module.main_render.attribute.chr_celestial_shape.round=Round
+render_pipeline.module.main_render.attribute.chr_celestial_shape.square=Square
+render_pipeline.module.main_render.attribute.chr_sun_size=Sun Size
+render_pipeline.module.main_render.attribute.chr_sun_size.description=Size of the visible sun.
+render_pipeline.module.main_render.attribute.chr_moon_size=Moon Size
+render_pipeline.module.main_render.attribute.chr_moon_size.description=Size of the visible moon.
+render_pipeline.module.main_render.attribute.chr_golden_hour_strength=Golden Hour
+render_pipeline.module.main_render.attribute.chr_golden_hour_strength.description=How warm and golden sunrise and sunset light is.
+render_pipeline.module.main_render.attribute.chr_blue_hour_strength=Blue Hour
+render_pipeline.module.main_render.attribute.chr_blue_hour_strength.description=Strength of the pale blue sky just after sunset and before sunrise.
+render_pipeline.module.main_render.attribute.chr_nebula_strength=Night Nebula
+render_pipeline.module.main_render.attribute.chr_nebula_strength.description=A faint coloured nebula band across clear night skies. 0 turns it off.
+render_pipeline.module.main_render.attribute.chr_night_brightness=Night Brightness
+render_pipeline.module.main_render.attribute.chr_night_brightness.description=Overall brightness of the night sky and moonlight.
+render_pipeline.module.main_render.attribute.chr_night_desaturation=Night Desaturation
+render_pipeline.module.main_render.attribute.chr_night_desaturation.description=How grey night light is. 1 = neutral grey, 0 = strongly blue.
+render_pipeline.module.main_render.attribute.chr_fog_density=Atmospheric Haze
+render_pipeline.module.main_render.attribute.chr_fog_density.description=Thickness of the distant haze. It is stronger at sunrise, sunset and in rain.
+render_pipeline.module.main_render.attribute.chr_water_fog_density=Water Murkiness
+render_pipeline.module.main_render.attribute.chr_water_fog_density.description=How quickly light fades in water. Higher values make deep water darker and bluer.
+render_pipeline.module.main_render.attribute.chr_water_wave_overlay=Water Waves
+render_pipeline.module.main_render.attribute.chr_water_wave_overlay.description=Gentle moving waves drawn over water surfaces as a final layer: they bend the reflection and the view into the water.
+render_pipeline.module.main_render.attribute.chr_water_wave_overlay_strength=Water Wave Strength
+render_pipeline.module.main_render.attribute.chr_water_wave_overlay_strength.description=How strongly the water waves bend the picture.
+render_pipeline.module.main_render.attribute.chr_water_biome_tint=Biome Water Colour
+render_pipeline.module.main_render.attribute.chr_water_biome_tint.description=How much the water takes on its biome colour (swamps murky green, warm oceans turquoise, cold oceans deep blue). 0 = the same clear teal everywhere.
+render_pipeline.module.main_render.attribute.chr_water_god_rays=Underwater Light Shafts
+render_pipeline.module.main_render.attribute.chr_water_god_rays.description=Shafts of sunlight under water, focused by the waves (Tyndall effect). 0 turns them off.
+render_pipeline.module.main_render.attribute.chr_rain_wetness=Wet Ground
+render_pipeline.module.main_render.attribute.chr_rain_wetness.description=Ground open to the sky gets darker and glossier in rain, with puddles and ripples.
+render_pipeline.module.main_render.attribute.chr_puddle_amount=Puddles
+render_pipeline.module.main_render.attribute.chr_puddle_amount.description=How much of the wet ground turns into mirror-like puddles.
+render_pipeline.module.main_render.attribute.chr_ripple_strength=Raindrop Ripples
+render_pipeline.module.main_render.attribute.chr_ripple_strength.description=Strength of the rings raindrops leave on wet ground and puddles.
+render_pipeline.module.main_render.attribute.chr_rain_amount=Raindrop Density
+render_pipeline.module.main_render.attribute.chr_rain_amount.description=Fraction of vanilla rain streaks that are drawn.
+render_pipeline.module.main_render.attribute.chr_rain_opacity=Raindrop Opacity
+render_pipeline.module.main_render.attribute.chr_rain_opacity.description=How visible the rain streaks are.
+render_pipeline.module.main_render.attribute.chr_cloud_mode=Clouds
+render_pipeline.module.main_render.attribute.chr_cloud_mode.description=Off, vanilla block clouds, or volumetric clouds (puffy in fair weather, a grey overcast deck in the rain) that cast moving shadows.
+render_pipeline.module.main_render.attribute.chr_clouds.off=Off
+render_pipeline.module.main_render.attribute.chr_clouds.block=Block
+render_pipeline.module.main_render.attribute.chr_clouds.volumetric=Volumetric
+render_pipeline.module.main_render.attribute.chr_cloud_coverage=Cloud Coverage
+render_pipeline.module.main_render.attribute.chr_cloud_coverage.description=How much of the fair-weather sky the volumetric clouds cover. Rain always brings full overcast.
+render_pipeline.module.main_render.attribute.chr_cloud_steps=Cloud Quality
+render_pipeline.module.main_render.attribute.chr_cloud_steps.description=Samples per pixel through the volumetric clouds. Lower is faster but grainier.
+render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength=Cloud Shadows
+render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength.description=How dark cloud shadows (volumetric or block clouds) are on the ground. 0 turns them off.
+render_pipeline.module.main_render.attribute.chr_pbr_filter=labPBR Filtering
+render_pipeline.module.main_render.attribute.chr_pbr_filter.description=Nearest keeps pixel-sharp normal and specular maps, bilinear smooths them.
+render_pipeline.module.main_render.attribute.chr_pbr_filter.nearest=Nearest
+render_pipeline.module.main_render.attribute.chr_pbr_filter.bilinear=Bilinear
+render_pipeline.module.main_render.attribute.chr_glass_reflection=Glass Reflection
+render_pipeline.module.main_render.attribute.chr_glass_reflection.description=How much glass turns into a mirror when the far side is darker, like a window at night. Glass with a bright side behind it stays see-through. 0 = only the physical reflection.
+render_pipeline.module.main_render.attribute.chr_normal_map_strength=Normal Map Strength
+render_pipeline.module.main_render.attribute.chr_normal_map_strength.description=Depth of surface detail from labPBR normal maps.
+render_pipeline.module.main_render.attribute.chr_eye_adaptation=Eye Adaptation
+render_pipeline.module.main_render.attribute.chr_eye_adaptation.description=Exposure adjusts like eyes do: stepping into daylight dazzles and settles quickly, darkness takes seconds to adjust to. Keep Radiance on manual exposure EV 0.
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_strength=Adaptation Strength
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_strength.description=How much of the difference between bright and dark scenes the eyes make up for. 0 = none, 1 = full.
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_max_ev=Dark Adaptation Limit
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_max_ev.description=How far the eyes can brighten a dark place, in stops. Keeps caves and nights dark.
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_speed=Adaptation Speed
+render_pipeline.module.main_render.attribute.chr_eye_adaptation_speed.description=How quickly the eyes adjust.
+render_pipeline.module.main_render.attribute.chr_grade_enabled=Color Grading
+render_pipeline.module.main_render.attribute.chr_grade_enabled.description=Final contrast, saturation and vignette pass.
+render_pipeline.module.main_render.attribute.chr_grade_contrast=Contrast
+render_pipeline.module.main_render.attribute.chr_grade_contrast.description=1 = unchanged.
+render_pipeline.module.main_render.attribute.chr_grade_saturation=Saturation
+render_pipeline.module.main_render.attribute.chr_grade_saturation.description=1 = unchanged.
+render_pipeline.module.main_render.attribute.chr_grade_vibrance=Vibrance
+render_pipeline.module.main_render.attribute.chr_grade_vibrance.description=Boosts muted colours more than already vivid ones.
+render_pipeline.module.main_render.attribute.chr_grade_warmth=Warm / Cool Split
+render_pipeline.module.main_render.attribute.chr_grade_warmth.description=Warm highlights and cool shadows: sunlit surfaces glow, shade reads blue. 0 = neutral.
+render_pipeline.module.main_render.attribute.chr_grade_punch=Punch
+render_pipeline.module.main_render.attribute.chr_grade_punch.description=A filmic S-curve and a little extra colour for a more cinematic, less vanilla look. 0 = off.
+render_pipeline.module.main_render.attribute.chr_grade_vignette=Vignette
+render_pipeline.module.main_render.attribute.chr_grade_vignette.description=Darkens the corners, more so in dark scenes.
+render_pipeline.module.main_render.attribute.chr_grade_film_grain=Film Grain
+render_pipeline.module.main_render.attribute.chr_grade_film_grain.description=Subtle noise like photographic film.

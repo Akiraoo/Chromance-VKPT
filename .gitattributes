@@ -1,0 +1,20 @@
+# Line endings: keep text files consistent across Windows and Linux checkouts.
+* text=auto
+
+*.glsl text eol=lf
+*.rgen text eol=lf
+*.rchit text eol=lf
+*.rahit text eol=lf
+*.rmiss text eol=lf
+*.frag text eol=lf
+*.vert text eol=lf
+*.comp text eol=lf
+*.hpp text eol=lf
+*.json text eol=lf
+*.lang text eol=lf
+*.md text eol=lf
+
+# Binary assets
+*.png binary
+*.raw binary
+*.zip binary

@@ -1,0 +1,730 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_control_flow_attributes : require
+
+// Chromance path tracer: ray generation.
+//
+// Traces the camera ray (and a separate ray against the first-person hand), lets the hit shaders shade each
+// surface, follows the path for CHR_INDIRECT_BOUNCES more bounces, applies fog and writes the radiance plus the
+// guide images Radiance's denoisers need (DLSS Ray Reconstruction or NRD).
+//
+// Output layout and the meaning of each guide follow Radiance's shader pack interface (see the Vanilla PT pack).
+
+#include "lib/resources_rt.glsl"
+#include "lib/payload.glsl"
+#include "interface/random.glsl"
+#include "interface/ray_cone.glsl"
+#include "interface/color_space.glsl"
+#include "lib/brdf.glsl"
+#include "lib/palette.glsl"
+#include "lib/celestial.glsl"
+#include "lib/water.glsl"
+#include "lib/rain.glsl"
+#include "lib/rain_map.glsl"
+#include "lib/waves.glsl"
+#define CHR_CLOUD_SHADOW_LOOKUP
+#include "lib/clouds.glsl"
+
+layout(set = 3, binding = 0, rgba16f) uniform image2D outputImage;
+layout(set = 3, binding = 1, rgba8) uniform image2D diffuseAlbedoImage;
+layout(set = 3, binding = 2, rgba8) uniform image2D specularAlbedoImage;
+layout(set = 3, binding = 3, rgba16f) uniform image2D normalRoughnessImage;
+layout(set = 3, binding = 4, rg16f) uniform image2D motionVectorImage;
+layout(set = 3, binding = 5, r16f) uniform image2D linearDepthImage;
+layout(set = 3, binding = 6, r16f) uniform image2D firstHitDepthImage;
+layout(set = 3, binding = 7, r16f) uniform image2D indirectSpecularHitDistanceImage;
+layout(set = 3, binding = 8, r16f) uniform image2D indirectDiffuseHitDistanceImage;
+layout(set = 3, binding = 9, rgba16f) uniform image2D indirectDiffuseRadianceImage;
+layout(set = 3, binding = 11, rgba16f) uniform image2D indirectSpecularRadianceImage;
+layout(set = 3, binding = 13, rgba16f) uniform image2D firstHitClearImage;
+layout(set = 3, binding = 14, rgba16f) uniform image2D firstHitRefractionImage;
+layout(set = 3, binding = 15, rgba16f) uniform image2D firstHitBaseEmissionImage;
+layout(set = 3, binding = 16, rgba16f) uniform image2D fogImage;
+layout(set = 3, binding = 23, r8ui) uniform uimage2D segmentationMaskImage;
+
+// Eye adaptation state written by exposure/adapt.comp: .x = exposure multiplier, .z = 1 once initialised.
+layout(set = 5, binding = 10) uniform sampler2D chrEyeExposure;
+
+float chrExposure() {
+#if CHR_EYE_ADAPTATION
+    vec4 state = texelFetch(chrEyeExposure, ivec2(0), 0);
+    float k = state.x;
+    if (state.z < 0.5 || !(k > 0.0) || isinf(k)) { return 1.0; }
+    return clamp(k, 0.05, 20.0);
+#else
+    return 1.0;
+#endif
+}
+
+layout(location = 0) rayPayloadEXT ChrRay ray;
+layout(location = 1) rayPayloadEXT ChrShadowRay shadowRay;
+
+const uint MISS_WORLD = 1u;
+const uint MISS_HAND = 2u;
+
+const uint SEGMENT_SKIP = 0u;
+const uint SEGMENT_SURFACE = 1u;
+const uint SEGMENT_SKY = 2u;
+const uint SEGMENT_EMISSIVE = 4u;
+const uint SEGMENT_CELESTIAL = 8u;
+// Open water in the rain: post/rain_ripple.frag draws the ripples over these pixels after denoising.
+const uint SEGMENT_RAIN_WATER = 16u;
+// Any water surface seen first (from above or below): post/water_waves.frag draws the waves over these pixels.
+const uint SEGMENT_WATER = 32u;
+// Sky mostly covered by volumetric cloud: the star pass skips these pixels.
+const uint SEGMENT_CLOUDY = 64u;
+
+// Bits kept from one trace to the next; everything else describes a single hit.
+const uint CHR_PERSISTENT_BITS = CHR_INSIDE_BOAT_BIT | CHR_FROM_DIFFUSE_BIT | CHR_IN_WATER_BIT |
+                                 CHR_CAMERA_SEGMENT_BIT | CHR_IGNORE_WATER_SELF_BIT | CHR_SHARP_BIT;
+
+// Biome colour of the water the camera is in (found by a probe up to the surface; 0 = unknown).
+uint chrCameraWaterTint = 0u;
+float chrCameraSurfaceDist = -1.0;   // distance from the camera up to the water surface (-1 = none found)
+
+void chrProbeCameraWater() {
+    chrCameraWaterTint = 0u;
+    chrCameraSurfaceDist = -1.0;
+    if (skyUBO.cameraSubmersionType != 1u) { return; }
+    vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
+    shadowRay.throughput = vec3(-1.0);
+    shadowRay.visible = 4u;
+    traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, eye, 0.01, vec3(0.0, 1.0, 0.0), 64.0, 1);
+    if (shadowRay.throughput.x > 0.0) {
+        chrCameraWaterTint = shadowRay.visible >> 8u;
+        chrCameraSurfaceDist = shadowRay.throughput.x;
+    }
+}
+
+void initRay(vec3 origin, vec3 direction, uint seed, float coneSpread, out ChrRay r) {
+    r.origin = origin;
+    r.hitT = 0.0;
+    r.direction = direction;
+    r.seed = xxhash32(uvec3(gl_LaunchIDEXT.x, gl_LaunchIDEXT.y, seed));
+    r.radiance = vec3(0.0);
+    r.coneWidth = 0.0;
+    r.throughput = vec3(1.0);
+    r.coneSpread = coneSpread;
+    r.normal = vec3(0.0);
+    r.state = CHR_CAMERA_SEGMENT_BIT;
+    if (skyUBO.cameraSubmersionType == 1u) { r.state |= CHR_IN_WATER_BIT; }
+    r.prevScenePos = vec3(0.0);
+    r.hasPrevScenePos = 0u;
+    r.directLight = vec3(0.0);
+    r.packedAlbedo = 0u;
+    r.packedMaterial = uvec4(0u);
+    chrSetRayWaterTint(r, chrCameraWaterTint);
+}
+
+void prepareTrace(inout ChrRay r, uint bounce) {
+    r.state &= CHR_PERSISTENT_BITS;
+    chrSetBounce(r, bounce);
+    r.hitT = 0.0;
+    chrSetRayHasPrevScenePos(r, false);
+    r.normal = vec3(0.0);
+    r.directLight = vec3(0.0);
+}
+
+void primaryMask(int step, bool hand, out float len, out uint mask, out uint missId) {
+    float far = max(1000.0, float(worldUBO.vistaDistanceBlocks));
+    if (!hand) {
+        missId = MISS_WORLD;
+        len = far;
+        mask = WORLD_MASK | FISHING_BOBBER_MASK | WEATHER_MASK | PARTICLE_MASK | CLOUD_MASK | BOAT_WATER_MASK;
+        if (worldUBO.isFirstPerson == 0u || step > 0) { mask |= PLAYER_MASK; }
+    } else if (step == 0) {
+        len = 10.0;
+        mask = HAND_MASK;
+        missId = MISS_HAND;
+    } else {
+        len = far;
+        mask = WORLD_MASK | FISHING_BOBBER_MASK | WEATHER_MASK | PARTICLE_MASK | CLOUD_MASK | BOAT_WATER_MASK;
+        missId = MISS_WORLD;
+    }
+}
+
+void secondaryMask(uint bounce, bool hand, out float len, out uint mask) {
+    if (bounce <= 1u) {
+        len = max(1000.0, float(worldUBO.vistaDistanceBlocks));
+        // The player's own body is included in first person too, so mirrors, glass and still water reflect it
+        // (the camera never sees it directly, only through secondary rays).
+        mask = WORLD_MASK | FISHING_BOBBER_MASK | CLOUD_MASK | BOAT_WATER_MASK;
+        if (!hand) { mask |= PLAYER_MASK; }
+    } else {
+        len = 384.0;
+        mask = WORLD_MASK | PLAYER_MASK | FISHING_BOBBER_MASK;
+    }
+}
+
+struct FirstHit {
+    bool hitSky;
+    bool hitSomething;
+    float surfaceDepth;      // ray distance to the first thing hit (sky = INF)
+    float linearDepth;       // view-space depth of the first thing hit
+    float viewDepth;         // view-space depth of the shaded surface (after see-through surfaces)
+    float tracedDistance;
+    vec3 incoming;
+    vec3 worldPos;
+};
+
+void tracePrimary(vec3 eye, vec3 dir, bool hand, inout ChrRay r, out FirstHit fh) {
+    fh.hitSky = false;
+    fh.hitSomething = false;
+    fh.surfaceDepth = INF_DISTANCE;
+    fh.linearDepth = INF_DISTANCE;
+    fh.viewDepth = INF_DISTANCE;
+    fh.tracedDistance = 0.0;
+    fh.incoming = dir;
+    fh.worldPos = vec3(0.0);
+
+    for (int step = 0; step < 2; ++step) {
+        prepareTrace(r, 0u);
+        float len;
+        uint mask;
+        uint missId;
+        primaryMask(step, hand, len, mask, missId);
+        vec3 o = r.origin;
+        vec3 d = r.direction;
+        ray = r;
+        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, mask, 1, 1, missId, o, 0.0001, d, len, 0);
+        r = ray;
+
+        if (step == 0) {
+            fh.surfaceDepth = r.hitT;
+            if (r.hitT != INF_DISTANCE) {
+                vec3 p = eye + dir * r.hitT - worldUBO.cameraViewMatInv[3].xyz;
+                fh.linearDepth = -(mat3(worldUBO.cameraEffectedViewMat) * p).z;
+            }
+        }
+        if (r.hitT == INF_DISTANCE) {
+            // A hand ray that misses never counts as sky; the world ray decides.
+            fh.hitSky = !(hand && step == 0);
+            return;
+        }
+        fh.hitSomething = true;
+        fh.tracedDistance += r.hitT;
+        if (chrHasBit(r, CHR_CONTINUE_BIT)) { continue; }
+        fh.incoming = d;
+        fh.worldPos = o + d * r.hitT;
+        break;
+    }
+    vec3 virtualOrigin = eye + dir * fh.tracedDistance;
+    fh.viewDepth = -(worldUBO.cameraEffectedViewMat * vec4(virtualOrigin, 1.0)).z;
+}
+
+void traceBounces(inout ChrRay r, uint startBounce, bool hand, out bool hasSecondHit, out float secondHitDistance) {
+    hasSecondHit = false;
+    secondHitDistance = 0.0;
+    uint bounces = uint(clamp(int(CHR_INDIRECT_BOUNCES), 0, 8));
+    float clampLimit = max(float(CHR_INDIRECT_CLAMP), 0.1);
+    for (uint b = startBounce; b < startBounce + bounces; ++b) {
+        if (chrHasBit(r, CHR_STOP_BIT)) { break; }
+        prepareTrace(r, b);
+        float len;
+        uint mask;
+        secondaryMask(b, hand, len, mask);
+        vec3 before = r.radiance;
+        vec3 o = r.origin;
+        vec3 d = r.direction;
+        ray = r;
+        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, mask, 1, 1, MISS_WORLD, o, 0.001, d, len, 0);
+        r = ray;
+        chrSetBit(r, CHR_IGNORE_WATER_SELF_BIT, false);
+
+        if (b == startBounce) {
+            secondHitDistance = r.hitT;
+            hasSecondHit = r.hitT != INF_DISTANCE;
+        }
+
+        // Anti-firefly: limit how much a single indirect bounce may add.
+        vec3 added = r.radiance - before;
+        float addedLum = chrLuminance(max(added, vec3(0.0)));
+        if (addedLum > clampLimit) { r.radiance = before + added * (clampLimit / addedLum); }
+
+        if (b > startBounce + 1u) {
+            float p = min(max(r.throughput.r, max(r.throughput.g, r.throughput.b)), 0.9);
+            if (rand(r.seed) > p) { break; }
+            r.throughput /= max(p, 1e-3);
+        }
+    }
+}
+
+vec2 motionVector(mat4 prevMVP, vec2 pixelCenter, vec4 pos) {
+    vec4 old = prevMVP * pos;
+    old.xy /= old.w;
+    old.xy = (old.xy * 0.5 + 0.5) * vec2(gl_LaunchSizeEXT.xy);
+    return old.xy - pixelCenter;
+}
+
+vec3 reinhardMax(vec3 c) {
+    float peak = max(1e-7, max(c.r, max(c.g, c.b)));
+    return c * ((peak / (peak + 1.0)) / peak);
+}
+
+// Fog for the whole camera path. Returns the additive part and a scalar transmittance for Radiance's NRD
+// compose pass; transmittance -1 means no fog.
+vec3 chrUnderwaterTransmittance = vec3(1.0);
+
+// Haze colour under water: the pack's pale teal, leaning towards the biome's water colour.
+vec3 chrUnderwaterHaze() {
+    vec3 haze = vec3(0.30, 0.62, 0.58);
+    if (chrCameraWaterTint != 0u) {
+        vec3 biome = unpackUnorm4x8(chrCameraWaterTint).rgb;
+        biome *= 0.62 / max(max(biome.r, max(biome.g, biome.b)), 1e-3);
+        haze = mix(haze, biome, clamp(float(CHR_WATER_BIOME_TINT), 0.0, 1.0) * 0.6);
+    }
+    return haze;
+}
+uint chrFogSeed = 0u;
+
+// Light shafts under water (Tyndall effect): sunlight focused by the waves into bright columns, scattered towards
+// the camera by the water. Marched along the view ray; for every sample the point where its sunlight crossed the
+// surface is found and the caustic focus there decides how bright the shaft is. Analytic, so it adds no noise.
+vec3 chrUnderwaterShafts(ChrPalette pal, vec3 dir, float dist, vec3 absorb) {
+    float amount = max(float(CHR_WATER_GOD_RAYS), 0.0);
+    vec3 L = pal.lightDir;
+    if (amount <= 0.0 || worldUBO.skyType != 1u || L.y < 0.08 || chrLuminance(pal.lightColor) <= 1e-5) {
+        return vec3(0.0);
+    }
+    vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
+    float marchLen = min(dist, 20.0);
+
+    // Water surface height: a probe ray straight up that stops at the first water surface (shadow.rahit reports
+    // its distance when asked with bit 4). Tried from the camera first, then from a few points further along the
+    // view, so the shafts still show out in the open when the camera itself is under a ledge.
+    // The probe straight up from the camera already ran (chrProbeCameraWater); reuse it.
+    bool foundSurface = chrCameraSurfaceDist > 0.0;
+    float surfaceY = foundSurface ? eye.y + chrCameraSurfaceDist : 0.0;
+    for (int k = 1; k < 4 && !foundSurface; ++k) {
+        float probeS = min(float(k) * 4.0, max(marchLen - 0.5, 0.0));
+        vec3 probeOrigin = eye + dir * probeS;
+        shadowRay.throughput = vec3(-1.0);
+        shadowRay.visible = 4u;
+        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, probeOrigin, 0.01, vec3(0.0, 1.0, 0.0), 48.0, 1);
+        if (shadowRay.throughput.x > 0.0) {
+            surfaceY = probeOrigin.y + shadowRay.throughput.x;
+            foundSurface = true;
+        }
+    }
+    if (!foundSurface) { return vec3(0.0); }
+
+    float t = worldUBO.gameTime * 1200.0;
+    const int STEPS = 9;
+    float jitter = float(chrFogSeed & 1023u) / 1024.0;
+
+    // Sunlight visibility at a few points along the view (blocks overhead cast dark gaps into the shafts).
+    const int VIS = 2;
+    float visible[VIS];
+    for (int k = 0; k < VIS; ++k) {
+        float vs = (float(k) + jitter) / float(VIS) * marchLen;
+        vec3 vx = eye + dir * vs;
+        visible[k] = 0.0;
+        if (vx.y >= surfaceY) { continue; }
+        shadowRay.throughput = vec3(1.0);
+        shadowRay.visible = 0u;
+        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, vx, 0.01, L, 512.0, 1);
+        visible[k] = (shadowRay.visible & 1u) != 0u ? 1.0 : 0.0;
+    }
+
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < STEPS; ++i) {
+        float vis = visible[min(i * VIS / STEPS, VIS - 1)];
+        if (vis <= 0.0) { continue; }
+        float s = (float(i) + jitter) / float(STEPS) * marchLen;
+        vec3 x = eye + dir * s;
+        float below = surfaceY - x.y;
+        if (below <= 0.0) { continue; }
+        float toSurface = below / L.y;
+        vec3 crossing = x + L * toSurface + vec3(worldUBO.cameraPos.xyz);
+        // Caustics of the longer waves, and only their focused part: dark gaps between the beams.
+        float c = chrCausticFast(crossing.xz, t, min(below, 8.0), 0.3);
+        float beam = max(c - 1.05, 0.0);
+        sum += exp(-absorb * (s + toSurface)) * (beam * beam * 10.0);
+    }
+    // A moderate forward lobe: the beams show around the sun instead of melting into one glow at its centre.
+    float g = 0.4;
+    float cosTheta = dot(dir, L);
+    float phase = (1.0 - g * g) / (12.566 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 1e-3), 1.5));
+    vec3 shafts = sum * (marchLen / float(STEPS)) * pal.lightColor * phase * 0.05 * amount;
+    // Soft ceiling so looking straight into the sun never washes the whole view out.
+    return shafts / (1.0 + shafts * 3.0);
+}
+
+// Sun shafts in the open air (crepuscular rays): sunlight scattered by the haze towards the camera, interrupted
+// wherever leaves, buildings or clouds block the sun. A few shadow rays along the view, jittered every frame and
+// smoothed by the upscaler over time.
+vec3 chrAirShafts(ChrPalette pal, vec3 dir, float dist, float hazeDensity) {
+    float amount = max(float(CHR_AIR_GOD_RAYS), 0.0);
+    vec3 L = pal.lightDir;
+    if (amount <= 0.0 || L.y < 0.02 || chrLuminance(pal.lightColor) <= 1e-6) { return vec3(0.0); }
+    float cosTheta = dot(dir, L);
+    // Strong forward scattering: the shafts show when looking towards the sun or moon.
+    float g = 0.65;
+    float phase = (1.0 - g * g) / (12.566 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 1e-3), 1.5));
+    if (phase < 0.04) { return vec3(0.0); }   // looking away from the sun: the shafts are invisible anyway
+
+    vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
+    float marchLen = min(dist, 96.0);
+    const int STEPS = 5;
+    float jitter = float(chrFogSeed & 1023u) / 1024.0;
+    float lit = 0.0;
+    for (int i = 0; i < STEPS; ++i) {
+        float s = (float(i) + jitter) / float(STEPS) * marchLen;
+        vec3 x = eye + dir * s;
+        shadowRay.throughput = vec3(1.0);
+        shadowRay.visible = 0u;
+            traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, x, 0.02, L, 512.0, 1);
+        float v = (shadowRay.visible & 1u) != 0u ? chrLuminance(shadowRay.throughput) : 0.0;
+        if (CHR_CLOUD_MODE == CHR_CLOUD_MODE_VOLUMETRIC) { v *= chrCloudShadowAt(x, L); }
+        if (CHR_CLOUD_MODE == CHR_CLOUD_MODE_BLOCK && v > 0.0) {
+            shadowRay.throughput = vec3(1.0);
+            shadowRay.visible = 0u;
+            traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, CLOUD_MASK, 0, 0, 0, x, 0.02, L, 1000.0, 1);
+            float vc = (shadowRay.visible & 1u) != 0u ? chrLuminance(shadowRay.throughput) : 0.0;
+            v *= mix(1.0, vc, clamp(float(CHR_CLOUD_SHADOW_STRENGTH), 0.0, 1.0));
+        }
+        lit += v;
+    }
+    float scatter = max(hazeDensity, 0.0006) * 5.0;
+    return pal.lightColor * phase * (lit / float(STEPS)) * marchLen * scatter * amount;
+}
+
+void applyFog(inout vec3 radiance, float dist, vec3 dir, bool hitSky, out vec3 fogAdd, out float fogT) {
+    fogAdd = vec3(0.0);
+    fogT = -1.0;
+    uint submersion = skyUBO.cameraSubmersionType;
+    float fogStart = worldUBO.fogStart;
+    float fogEnd = max(worldUBO.fogEnd, fogStart + 1.0);
+    if (hitSky) { dist = fogEnd * 4.0; }
+
+    if (skyUBO.hasBlindnessOrDarkness > 0u) {
+        float t = 1.0 - smoothstep(fogStart, fogEnd, dist);
+        radiance *= t;
+        fogT = t;
+        return;
+    }
+    if (submersion == 1u) {
+        // Under water: depth absorption plus soft in-scattered light. Red fades first, so distant things turn
+        // blue-green while nearby ones keep their colours. The fog is baked in here (see main) instead of leaving
+        // it to Radiance's NRD compose pass, which would tint the whole picture with its own saturated blue.
+        ChrPalette pal = chrPalette();
+        // Clearer and lighter than the water seen from above: a pale blue-green haze.
+        vec3 absorb = chrWaterAbsorptionTinted(chrCameraWaterTint) * 0.67 + vec3(0.005);
+        vec3 t = exp(-absorb * min(dist, 512.0));
+        vec3 scatter = (pal.zenith * 0.32 + pal.lightColor * 0.020 + vec3(0.0010)) * chrUnderwaterHaze();
+        fogAdd = scatter * (vec3(1.0) - t) + chrUnderwaterShafts(pal, dir, dist, absorb);
+        // The whole underwater view a little dimmer than the world above.
+        const float underwaterDim = 0.8;
+        t *= underwaterDim;
+        fogAdd *= underwaterDim;
+        radiance = radiance * t + fogAdd;
+        chrUnderwaterTransmittance = t;
+        fogT = -2.0;
+        return;
+    }
+    if (submersion == 0u || submersion == 2u) {
+        vec3 color = submersion == 0u ? vec3(0.9, 0.28, 0.03) * 1.5 : vec3(0.70, 0.76, 0.82) * 0.5;
+        float t = exp(-dist * (submersion == 0u ? 2.5 : 1.2));
+        fogAdd = color * (1.0 - t);
+        radiance = radiance * t + fogAdd;
+        fogT = t;
+        return;
+    }
+
+    if (worldUBO.skyType == 1u) {
+        ChrPalette pal = chrPalette();
+        // Clear air by day (a crisp, deep view); the haze thickens at golden hour, blue hour and in the rain.
+        float density = 0.0006 * max(float(CHR_FOG_DENSITY), 0.0) *
+                        (1.0 + 1.6 * pal.golden + 0.8 * pal.blue + 8.0 * pal.rain);
+        vec3 shafts = chrAirShafts(pal, dir, hitSky ? 96.0 : dist, density);
+        if (hitSky) {
+            fogAdd = shafts;
+            radiance += shafts;
+            fogT = 1.0;
+            return;
+        }
+        float haze = exp(-density * dist);
+        float border = 1.0 - smoothstep(fogStart, fogEnd, dist);
+        float t = haze * border;
+        vec3 color = chrFogColor(pal, dir);
+        fogAdd = color * (1.0 - t) + shafts * border;
+        radiance = radiance * t + fogAdd;
+        fogT = t;
+        return;
+    }
+
+    vec3 color = worldUBO.skyType == 0u ? srgbToLinear(clamp(worldUBO.fogColor.rgb, vec3(0.0), vec3(1.0))) * 0.25 :
+                                          vec3(0.020, 0.015, 0.030);
+    float t = (1.0 - smoothstep(fogStart, fogEnd, dist)) * exp(-0.004 * max(float(CHR_FOG_DENSITY), 0.0) * dist);
+    fogAdd = color * (1.0 - t);
+    radiance = radiance * t + fogAdd;
+    fogT = t;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    chrProbeCameraWater();
+    vec2 resolution = vec2(gl_LaunchSizeEXT.xy);
+    vec2 pixelCenter = vec2(pixel) + 0.5 + worldUBO.cameraJitter;
+    vec2 ndc = pixelCenter / resolution * 2.0 - 1.0;
+    vec4 viewNear = worldUBO.cameraProjMatInv * vec4(ndc, 0.0, 1.0);
+    viewNear /= viewNear.w;
+    vec3 eye = vec3(worldUBO.cameraEffectedViewMatInv * vec4(0.0, 0.0, 0.0, 1.0));
+    vec3 dir = normalize(vec3(worldUBO.cameraEffectedViewMatInv * vec4(viewNear.xyz, 0.0)));
+    float coneSpread = coneSpreadFromFov(fovYFromProj(worldUBO.cameraProjMat), fovXFromProj(worldUBO.cameraProjMat), resolution);
+
+    // ---- Camera rays: world and first-person hand ---------------------------------------------------------
+    ChrRay worldRay;
+    initRay(eye, dir, worldUBO.seed, coneSpread, worldRay);
+    FirstHit worldHit;
+    tracePrimary(eye, dir, false, worldRay, worldHit);
+
+    ChrRay handRay;
+    initRay(eye, dir, worldUBO.seed ^ 0x9E3779B9u, coneSpread, handRay);
+    FirstHit handHit;
+    tracePrimary(eye, dir, true, handRay, handHit);
+
+    bool isHand = handHit.surfaceDepth != INF_DISTANCE;
+    FirstHit fh = isHand ? handHit : worldHit;
+    ChrRay r = isHand ? handRay : worldRay;
+    bool hitSky = !isHand && worldHit.hitSky;
+
+    uint segment = isHand ? SEGMENT_SKIP : (hitSky ? SEGMENT_SKY : SEGMENT_SURFACE);
+    if (hitSky && r.normal.y > 0.35) { segment |= SEGMENT_CLOUDY; }
+    if (hitSky && worldUBO.skyType == 1u && skyUBO.cameraSubmersionType == 3u && skyUBO.hasBlindnessOrDarkness == 0u) {
+        ChrPalette pal = chrPalette();
+        if (dir.y > -0.03 && chrCelestialCovers(pal, dir)) { segment |= SEGMENT_CELESTIAL; }
+    }
+
+    imageStore(firstHitDepthImage, pixel, vec4(fh.linearDepth));
+
+    vec3 cameraDelta = vec3(worldUBO.cameraPos.xyz - lastWorldUBO.cameraPos.xyz);
+    mat4 prevMVP = lastWorldUBO.cameraProjMat * lastWorldUBO.cameraEffectedViewMat;
+
+    ChrMaterial mat;
+    bool noisy = false;
+    bool firstDiffuse = false;
+    bool firstSpecular = false;
+    bool transparentSplit = false;
+    vec3 baseEmission = vec3(0.0);
+    bool hasSecondHit = false;
+    float secondHitDistance = 0.0;
+    float reflectionHitDistance = 0.0;
+    bool hasReflectionHit = false;
+    bool rippled = false;
+    bool rippledWater = false;
+    bool firstHitWater = false;
+
+    bool skipFog = chrHasBit(r, CHR_SKIP_FOG_BIT);
+    if (hitSky) {
+        // Sky: a flat white albedo guide. Using the sky colour itself (as Radiance's sample pack does) breaks down at
+        // night: the radiance is so dark that the 8-bit guide quantises it into coloured steps, and DLSS Ray
+        // Reconstruction, which trusts the guide as noise-free texture, put those back as coloured speckles along
+        // the cloud edges. With a flat guide it treats the sky's variation as light and smooths it.
+        imageStore(diffuseAlbedoImage, pixel, vec4(1.0, 1.0, 1.0, 0.0));
+        imageStore(specularAlbedoImage, pixel, vec4(0.0));
+        imageStore(normalRoughnessImage, pixel, vec4(0.0));
+        imageStore(linearDepthImage, pixel, vec4(INF_DISTANCE));
+        imageStore(motionVectorImage, pixel, vec4(motionVector(prevMVP, pixelCenter, vec4(dir, 0.0)), 0.0, 0.0));
+    } else {
+        mat = chrLoadMaterial(r);
+        bool waterSurface = chrHasBit(r, CHR_WATER_SURFACE_BIT);
+        bool transmissive = chrHasBit(r, CHR_TRANSMISSIVE_BIT);
+        rippled = !isHand && chrHasBit(r, CHR_RIPPLE_BIT);
+        rippledWater = rippled && waterSurface;
+        firstHitWater = waterSurface && !isHand;
+        if (!isHand && mat.emission > 1e-4) { segment = SEGMENT_EMISSIVE; }
+
+        imageStore(diffuseAlbedoImage, pixel, vec4(mat.albedo.rgb * mat.albedo.a, mat.metallic));
+        imageStore(specularAlbedoImage, pixel, vec4(mat.f0, transmissive ? 1.0 : 0.0));
+        imageStore(normalRoughnessImage, pixel, vec4(r.normal, mat.roughness));
+        imageStore(linearDepthImage, pixel, vec4(fh.viewDepth));
+        vec3 prevPos = chrRayHasPrevScenePos(r) ? r.prevScenePos : eye + dir * fh.tracedDistance + cameraDelta;
+        imageStore(motionVectorImage, pixel, vec4(motionVector(prevMVP, pixelCenter, vec4(prevPos, 1.0)), 0.0, 0.0));
+
+        // A whisper of light so pitch-black caves keep some shape. Real darkness is still dark.
+        vec3 ambient = vec3(float(CHR_MINIMUM_LIGHT));
+        if (worldUBO.skyType == 0u) {
+            // The Nether has no sky; its hazy air keeps distant caverns faintly visible in the biome's colour.
+            ambient += srgbToLinear(clamp(worldUBO.fogColor.rgb, vec3(0.0), vec3(1.0))) * 0.03;
+        } else if (worldUBO.skyType == 2u) {
+            ambient += vec3(0.020, 0.016, 0.028);
+        }
+        r.radiance += ambient * mat.albedo.rgb * mat.albedo.a * r.throughput;
+
+        noisy = chrHasBit(r, CHR_NOISY_BIT);
+        if (noisy) {
+            baseEmission = mat.albedo.rgb * mat.emission * max(float(CHR_EMISSIVE_BRIGHTNESS), 0.0) * r.throughput;
+            uint lobe = chrLobe(r);
+            firstDiffuse = lobe == CHR_LOBE_DIFFUSE;
+            firstSpecular = lobe == CHR_LOBE_SPECULAR || lobe == CHR_LOBE_TRANSMISSION;
+
+            bool enteredWater = waterSurface && lobe == CHR_LOBE_TRANSMISSION && chrHasBit(r, CHR_IN_WATER_BIT);
+            if (enteredWater) {
+                // Water seen from above: trace reflection and refraction separately instead of picking one,
+                // which keeps the surface clean under the denoiser.
+                transparentSplit = true;
+                vec3 n = r.normal;
+                vec3 incoming = fh.incoming;
+                vec3 nn = dot(n, -incoming) >= 0.0 ? n : -n;
+                float fresnel = chrDielectricFresnel(clamp(dot(nn, -incoming), 0.0, 1.0), 1.0 / CHR_WATER_IOR);
+                vec3 surfaceRadiance = r.radiance;
+
+                ChrRay refl = r;
+                refl.radiance = vec3(0.0);
+                refl.direction = reflect(incoming, nn);
+                refl.origin = fh.worldPos + nn * CHR_WATER_ORIGIN_BIAS;
+                refl.throughput = r.throughput * fresnel;
+                refl.seed = xxhash32(uvec3(r.seed, 0x51ED27u, worldUBO.seed));
+                chrSetBit(refl, CHR_IN_WATER_BIT, false);
+                chrSetBit(refl, CHR_FROM_DIFFUSE_BIT, false);
+                chrSetBit(refl, CHR_SHARP_BIT, true);
+                chrSetBit(refl, CHR_IGNORE_WATER_SELF_BIT, true);
+                chrSetBit(refl, CHR_STOP_BIT, false);
+                traceBounces(refl, 1u, isHand, hasReflectionHit, reflectionHitDistance);
+
+                ChrRay refr = r;
+                refr.radiance = vec3(0.0);
+                refr.throughput = r.throughput * (1.0 - fresnel);
+                refr.seed = xxhash32(uvec3(r.seed, 0xA3C59Bu, worldUBO.seed));
+                chrSetBit(refr, CHR_IGNORE_WATER_SELF_BIT, true);
+                bool refrHit;
+                float refrDistance;
+                traceBounces(refr, 1u, isHand, refrHit, refrDistance);
+
+                r.radiance = surfaceRadiance + refl.radiance + refr.radiance;
+
+                hasSecondHit = hasReflectionHit;
+                secondHitDistance = reflectionHitDistance;
+            } else if (transmissive && !waterSurface &&
+                       (lobe == CHR_LOBE_TRANSMISSION || lobe == CHR_LOBE_SPECULAR)) {
+                // Glass and other thin see-through blocks: trace the reflection and the view through separately,
+                // then let what lies behind decide. Like a real window, glass with a dark room or night behind it
+                // turns into a mirror of the brighter side, while a lit room behind it shows straight through.
+                transparentSplit = true;
+                vec3 n = r.normal;
+                vec3 incoming = fh.incoming;
+                vec3 nn = dot(n, -incoming) >= 0.0 ? n : -n;
+                float cosI = clamp(dot(nn, -incoming), 0.0, 1.0);
+                float fresnel = 0.04 + 0.96 * pow(1.0 - cosI, 5.0);
+                vec3 surfaceRadiance = r.radiance;
+                vec3 tint = mix(vec3(1.0), clamp(mat.albedo.rgb * 1.1, vec3(0.0), vec3(1.0)),
+                                clamp(mat.albedo.a * 1.4, 0.0, 1.0));
+
+                ChrRay refl = r;
+                refl.radiance = vec3(0.0);
+                refl.direction = reflect(incoming, nn);
+                refl.origin = fh.worldPos + nn * 0.001;
+                refl.throughput = vec3(1.0);
+                refl.seed = xxhash32(uvec3(r.seed, 0x6A11Cu, worldUBO.seed));
+                chrSetBit(refl, CHR_FROM_DIFFUSE_BIT, false);
+                chrSetBit(refl, CHR_SHARP_BIT, true);
+                chrSetBit(refl, CHR_STOP_BIT, false);
+                traceBounces(refl, 1u, isHand, hasReflectionHit, reflectionHitDistance);
+
+                ChrRay through = r;
+                through.radiance = vec3(0.0);
+                through.direction = incoming;
+                through.origin = fh.worldPos - nn * 0.001;
+                through.throughput = tint;
+                through.seed = xxhash32(uvec3(r.seed, 0x7B2D9u, worldUBO.seed));
+                chrSetBit(through, CHR_FROM_DIFFUSE_BIT, false);
+                chrSetBit(through, CHR_SHARP_BIT, true);
+                chrSetBit(through, CHR_STOP_BIT, false);
+                bool throughHit;
+                float throughDistance;
+                traceBounces(through, 1u, isHand, throughHit, throughDistance);
+
+                // How bright is the far side compared with the reflected side?
+                float behind = chrLuminance(through.radiance);
+                float front = chrLuminance(refl.radiance);
+                float darkBehind = 1.0 - smoothstep(0.08, 0.8, behind / max(front, 1e-5));
+                float maxReflect = clamp(float(CHR_GLASS_REFLECTION), 0.0, 1.0) * 0.6;
+                float reflectance = mix(fresnel, max(fresnel, maxReflect), darkBehind);
+                r.radiance = surfaceRadiance + refl.radiance * reflectance + through.radiance * (1.0 - reflectance);
+
+                hasSecondHit = throughHit || hasReflectionHit;
+                secondHitDistance = reflectance > 0.5 ? reflectionHitDistance : throughDistance;
+            } else {
+                traceBounces(r, 1u, isHand, hasSecondHit, secondHitDistance);
+            }
+        } else {
+            traceBounces(r, 1u, isHand, hasSecondHit, secondHitDistance);
+        }
+    }
+
+    if (any(isnan(r.radiance)) || any(isinf(r.radiance))) { r.radiance = vec3(0.0); }
+
+    // ---- Denoiser signals (before fog) ----------------------------------------------------------------------
+    vec3 signal = max(r.radiance - baseEmission, vec3(0.0));
+    vec3 diffuseSignal = vec3(0.0);
+    vec3 specularSignal = vec3(0.0);
+    vec3 clearSignal = vec3(0.0);
+    float clearWeight = 0.0;
+    bool denoise = !hitSky && noisy;
+    if (denoise) {
+        if (firstDiffuse && !transparentSplit) {
+            diffuseSignal = signal;
+        } else {
+            specularSignal = signal;
+        }
+    } else {
+        clearSignal = r.radiance;
+        clearWeight = 1.0;
+    }
+
+    // ---- Fog ------------------------------------------------------------------------------------------------
+    vec3 fogAdd = vec3(0.0);
+    float fogT = -1.0;
+    if (!skipFog) {
+        float dist = hitSky ? INF_DISTANCE : length(fh.worldPos - eye);
+        if (!hitSky && fh.worldPos == vec3(0.0)) { dist = fh.surfaceDepth; }
+        chrFogSeed = xxhash32(uvec3(uvec2(pixel), worldUBO.seed));
+        applyFog(r.radiance, dist, dir, hitSky, fogAdd, fogT);
+    }
+
+    if (fogT == -2.0) {
+        // Under water: apply the water fog to the signals themselves and tell Radiance there is no fog to compose.
+        vec3 t = chrUnderwaterTransmittance;
+        diffuseSignal *= t;
+        specularSignal *= t;
+        clearSignal = clearSignal * t + fogAdd;
+        baseEmission = baseEmission * t + fogAdd;
+        fogAdd = vec3(0.0);
+        fogT = -1.0;
+    }
+    // Eye adaptation: the whole frame is scaled by the current exposure before Radiance's denoiser and tone mapping.
+    {
+        float k = chrExposure();
+        diffuseSignal *= k;
+        specularSignal *= k;
+        clearSignal *= k;
+        baseEmission *= k;
+        fogAdd *= k;
+        r.radiance *= k;
+    }
+    imageStore(indirectDiffuseRadianceImage, pixel, vec4(diffuseSignal, denoise ? 1.0 : 0.0));
+    imageStore(indirectSpecularRadianceImage, pixel, vec4(specularSignal, denoise ? 1.0 : 0.0));
+    imageStore(firstHitClearImage, pixel, vec4(clearSignal, clearWeight));
+    imageStore(firstHitRefractionImage, pixel, vec4(0.0));
+    imageStore(firstHitBaseEmissionImage, pixel, vec4(baseEmission, 1.0));
+    imageStore(fogImage, pixel, vec4(fogAdd, fogT));
+
+    float specularHitDistance = (denoise && !firstDiffuse) ? (hasSecondHit ? secondHitDistance : INF_DISTANCE) : 0.0;
+    // Rain ripples: report the reflection as lying on the surface, so the denoiser keeps the rings pinned to the
+    // water instead of sliding them along with the reflected sky (which made them look like a frozen overlay).
+    if (rippled && !rippledWater && denoise && !firstDiffuse) { specularHitDistance = 0.02; }
+    float diffuseHitDistance = (denoise && firstDiffuse && !transparentSplit) ?
+                                   (hasSecondHit ? secondHitDistance : INF_DISTANCE) : 0.0;
+    imageStore(indirectSpecularHitDistanceImage, pixel, vec4(specularHitDistance, vec3(1.0)));
+    imageStore(indirectDiffuseHitDistanceImage, pixel, vec4(diffuseHitDistance));
+    if (rippledWater && !isHand) { segment |= SEGMENT_RAIN_WATER; }
+    if (firstHitWater) { segment |= SEGMENT_WATER; }
+    imageStore(segmentationMaskImage, pixel, uvec4(segment, 0u, 0u, 0u));
+    imageStore(outputImage, pixel, vec4(r.radiance, 1.0));
+}

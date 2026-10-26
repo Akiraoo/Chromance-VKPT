@@ -1,0 +1,113 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+// Temporal accumulation for the sky (volumetric clouds and sun shafts). The clouds are raymarched with a few
+// jittered samples per pixel; Radiance's denoisers leave the sky alone (or, with DLSS Ray Reconstruction, keep its
+// noise as if it were detail, which showed up as coloured speckles along the cloud edges). Here every sky pixel is
+// blended with its own history, reprojected by the camera rotation (the sky is infinitely far away), and the
+// history is clamped to the current neighbourhood so moving clouds do not smear.
+
+#include "common/shared.hpp"
+
+#ifndef CHR_CLOUD_HISTORY_PING
+#    define CHR_CLOUD_HISTORY_PING true
+#endif
+#ifndef CHR_CLOUD_HISTORY_READY
+#    define CHR_CLOUD_HISTORY_READY false
+#endif
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 2, binding = 0) uniform WorldUniform {
+    WorldUBO worldUBO;
+};
+layout(set = 2, binding = 1) uniform LastWorldUniform {
+    WorldUBO lastWorldUBO;
+};
+
+layout(set = 3, binding = 0, rgba16f) uniform image2D outputImage;
+layout(set = 3, binding = 13, rgba16f) uniform image2D firstHitClearImage;
+layout(set = 3, binding = 16, rgba16f) uniform readonly image2D fogImage;
+layout(set = 3, binding = 23, r8ui) uniform readonly uimage2D segmentationMaskImage;
+layout(set = 5, binding = 12, rgba16f) uniform image2DArray cloudHistory;
+
+const uint SEGMENT_SKY = 2u;
+
+bool isSky(ivec2 p) {
+    return (imageLoad(segmentationMaskImage, p).r & SEGMENT_SKY) != 0u;
+}
+
+void main() {
+    ivec2 size = imageSize(outputImage);
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= size.x || pixel.y >= size.y) { return; }
+    int readLayer = CHR_CLOUD_HISTORY_PING ? 0 : 1;
+    int writeLayer = CHR_CLOUD_HISTORY_PING ? 1 : 0;
+
+    vec4 current = imageLoad(outputImage, pixel);
+    if (!isSky(pixel)) {
+        imageStore(cloudHistory, ivec3(pixel, writeLayer), vec4(0.0, 0.0, 0.0, -1.0));
+        return;
+    }
+
+    // Neighbourhood of the current frame (sky pixels only) for clamping the history.
+    vec3 lo = current.rgb;
+    vec3 hi = current.rgb;
+    vec3 mean = vec3(0.0);
+    float n = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 q = clamp(pixel + ivec2(x, y), ivec2(0), size - ivec2(1));
+            if (!isSky(q)) { continue; }
+            vec3 c = imageLoad(outputImage, q).rgb;
+            lo = min(lo, c);
+            hi = max(hi, c);
+            mean += c;
+            n += 1.0;
+        }
+    }
+    mean /= max(n, 1.0);
+
+    vec3 result = current.rgb;
+    if (CHR_CLOUD_HISTORY_READY) {
+        // Direction of this pixel, then where that direction was on screen last frame.
+        vec2 ndc = (vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0;
+        vec4 viewNear = worldUBO.cameraProjMatInv * vec4(ndc, 0.0, 1.0);
+        vec3 dir = normalize(mat3(worldUBO.cameraEffectedViewMatInv) * (viewNear.xyz / viewNear.w));
+        vec4 prevClip = lastWorldUBO.cameraProjMat * (lastWorldUBO.cameraEffectedViewMat * vec4(dir, 0.0));
+        if (prevClip.w > 1e-4) {
+            vec2 prevUv = prevClip.xy / prevClip.w * 0.5 + 0.5;
+            vec2 prevPixel = prevUv * vec2(size) - 0.5;
+            if (all(greaterThanEqual(prevPixel, vec2(0.0))) && all(lessThan(prevPixel, vec2(size - ivec2(1))))) {
+                ivec2 b = ivec2(floor(prevPixel));
+                vec2 f = prevPixel - vec2(b);
+                vec4 h00 = imageLoad(cloudHistory, ivec3(b, readLayer));
+                vec4 h10 = imageLoad(cloudHistory, ivec3(b + ivec2(1, 0), readLayer));
+                vec4 h01 = imageLoad(cloudHistory, ivec3(b + ivec2(0, 1), readLayer));
+                vec4 h11 = imageLoad(cloudHistory, ivec3(b + ivec2(1, 1), readLayer));
+                float w00 = (1.0 - f.x) * (1.0 - f.y) * float(h00.a >= 0.0);
+                float w10 = f.x * (1.0 - f.y) * float(h10.a >= 0.0);
+                float w01 = (1.0 - f.x) * f.y * float(h01.a >= 0.0);
+                float w11 = f.x * f.y * float(h11.a >= 0.0);
+                float wsum = w00 + w10 + w01 + w11;
+                if (wsum > 1e-3) {
+                    vec3 history = (h00.rgb * w00 + h10.rgb * w10 + h01.rgb * w01 + h11.rgb * w11) / wsum;
+                    // Clamp towards the neighbourhood (slightly widened) so cloud motion does not ghost.
+                    vec3 pad = (hi - lo) * 0.25;
+                    history = clamp(history, lo - pad, hi + pad);
+                    result = mix(history, current.rgb, 0.12);
+                }
+            }
+        }
+    }
+    if (any(isnan(result)) || any(isinf(result))) { result = current.rgb; }
+    imageStore(cloudHistory, ivec3(pixel, writeLayer), vec4(result, 1.0));
+    imageStore(outputImage, pixel, vec4(result, current.a));
+    vec4 clear = imageLoad(firstHitClearImage, pixel);
+    if (clear.a > 0.0) {
+        // The NRD path composes clear + fog; the sky's fog part (sun shafts) is already inside the result.
+        vec4 fog = imageLoad(fogImage, pixel);
+        vec3 fogPart = fog.a >= 0.0 ? fog.rgb : vec3(0.0);
+        imageStore(firstHitClearImage, pixel, vec4(max(result - fogPart, vec3(0.0)), clear.a));
+    }
+}
