@@ -99,7 +99,9 @@ ChrPalette chrPalette() {
     p.lightDir = sunUp ? p.sunDir : -p.sunDir;
     p.lightColor = sunUp ? p.sunRadiance : p.moonRadiance;
     // Overcast: the sun is mostly hidden and its light becomes flat sky light.
-    p.lightColor *= mix(1.0, 0.03, p.rain);
+    // Under a full rain deck there is no sun to cast shadows at all: even a few percent of it drew soft, dark tree
+    // shadows across wet ground, because the sky light around them is dim too.
+    p.lightColor *= mix(1.0, 0.03, p.rain) * (1.0 - smoothstep(0.5, 1.0, p.rain));
 
     // ---- Sky gradient --------------------------------------------------------------------------------------
     // Deep blue overhead fading to a warm, creamy horizon (warmest on the sun's side).

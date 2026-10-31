@@ -14,10 +14,17 @@
 #    define CHR_RIPPLE_STRENGTH 1.0
 #endif
 
+// Integer hash of a lattice point. (A sin/fract hash fed with world coordinates in the thousands ran out of float
+// precision: its values came out correlated and the puddles turned into long diagonal streaks.)
 float chrRainHash(vec2 p) {
-    p = fract(p * vec2(443.897, 441.423));
-    p += dot(p, p.yx + 19.19);
-    return fract((p.x + p.y) * p.x);
+    uvec2 q = uvec2(ivec2(floor(p)));
+    uint h = q.x * 0x8da6b343u ^ q.y * 0xd8163841u ^ 0x2f6b9e1du;
+    h ^= h >> 16u;
+    h *= 0x7feb352du;
+    h ^= h >> 15u;
+    h *= 0x846ca68bu;
+    h ^= h >> 16u;
+    return float(h) * (1.0 / 4294967295.0);
 }
 
 float chrRainNoise(vec2 p) {

@@ -12,6 +12,7 @@
 
 #include "common/shared.hpp"
 #include "lib/rain.glsl"
+#include "lib/waves.glsl"
 #include "lib/origin.glsl"
 
 #ifndef CHR_POST_SCENE_BINDING
@@ -60,40 +61,62 @@ float rippleFresnel(float cosI) {
     return 0.02 + 0.98 * f * f * f * f * f;
 }
 
-// Brightness of the ring lines (0..1) at a water point. Same drops and timing as chrRippleSlope in lib/rain.glsl,
-// but drawn as soft lines. footprint = size of one screen pixel on the water, in blocks: rings are widened to at
-// least that and dimmed to match, so they never break up into the moire pattern of lines thinner than a pixel.
-float rippleRings(vec2 p, float t, float footprint) {
-    float width = max(0.018, footprint * 0.75);
-    float energy = 0.018 / width;
-    float result = 0.0;
-    vec2 cell = floor(p);
+// Rain rings, like real drops on a pond: every drop sends out a small wave packet (a Gaussian envelope over a
+// short wave), so it shows as two to four concentric rings that spread and widen as they travel outwards. Drops
+// differ in strength and reach, two grids of drops with different spacing overlap so they do not line up, and a
+// fine, fast chop of the rain itself sits underneath. Everything is a surface slope in blocks; the picture is bent
+// by it afterwards. footprint = size of one screen pixel on the water (blocks): ring detail finer than that fades
+// to a soft bump instead of breaking up into moire.
+vec2 rippleLayer(vec2 p, float t, float footprint, float cellSize, uint salt) {
+    const float WAVELENGTH = 0.085;                      // blocks between neighbouring rings of one drop
+    const float K = 6.2831853 / WAVELENGTH;
+    float aa = exp(-pow(K * footprint * 0.35, 2.0));   // how much of the ring structure the pixels can show
+    vec2 q = p / cellSize;
+    vec2 cell = floor(q);
+    vec2 slope = vec2(0.0);
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             vec2 c = cell + vec2(x, y);
-            float period = mix(1.1, 2.6, chrCellHash(c, 1u));
-            float cycle = t / period + chrCellHash(c, 2u);
+            float period = mix(0.7, 2.2, chrCellHash(c, salt + 1u));
+            float cycle = t / period + chrCellHash(c, salt + 2u);
             float n = floor(cycle);
-            float phase = fract(cycle);
             uint round = uint(int(n) & 0xffff);
-            if (chrCellHash(c, 3u + round * 7u) > 0.7) { continue; }
-            const float life = 0.85;
+            if (chrCellHash(c, salt + 3u + round * 7u) > 0.8) { continue; }
+            const float life = 0.9;
+            float phase = fract(cycle);
             if (phase > life) { continue; }
             float age = phase / life;
-            vec2 center = c + 0.1 + 0.8 * vec2(chrCellHash(c, 4u + round * 13u), chrCellHash(c, 5u + round * 17u));
-            float r = length(p - center);
-            float front = age * 0.95;
-            float fade = (1.0 - age) * (1.0 - age);
-            // Two soft rings: the leading one and a fainter one behind it.
-            for (int k = 0; k < 2; ++k) {
-                float ringR = front - float(k) * 0.11;
-                if (ringR <= 0.0) { continue; }
-                float d = (r - ringR) / width;
-                result += exp(-d * d) * fade * (k == 0 ? 1.0 : 0.5);
-            }
+            float strengthR = mix(0.3, 1.0, chrCellHash(c, salt + 6u + round * 19u));
+            float reach = cellSize * mix(0.45, 1.2, chrCellHash(c, salt + 8u + round * 23u));
+            vec2 center = (c + 0.1 + 0.8 * vec2(chrCellHash(c, salt + 4u + round * 13u),
+                                               chrCellHash(c, salt + 5u + round * 17u))) * cellSize;
+            vec2 dp = p - center;
+            float r = length(dp);
+            float front = 0.015 + age * reach;
+            float sigma = 0.025 + 0.07 * age;             // the packet widens: more, fainter rings later
+            float xr = r - front;
+            if (abs(xr) > 3.0 * sigma || r < 1e-4) { continue; }
+            float env = exp(-xr * xr / (sigma * sigma));
+            float fade = pow(1.0 - age, 1.6) * strengthR;
+            // h = env * cos(K x): its radial derivative. Rings the pixels cannot show keep only the soft envelope.
+            float ringPart = env * (-2.0 * xr / (sigma * sigma) * cos(K * xr) - K * sin(K * xr)) * aa;
+            float bumpPart = env * (-2.0 * xr / (sigma * sigma)) * (1.0 - aa) * 0.6;
+            float amplitude = 0.0013;
+            slope += (dp / r) * (ringPart + bumpPart) * amplitude * fade;
         }
     }
-    return clamp(result * energy, 0.0, 1.0);
+    return slope;
+}
+
+vec2 rippleSlope(vec2 p, float t, float footprint) {
+    vec2 slope = rippleLayer(p, t, footprint, 0.55, 0u);
+    slope += rippleLayer(p + vec2(17.3, -4.1), t * 1.13, footprint, 0.38, 101u) * 0.7;
+    // The rain's own fine chop: drops too small to make rings, a fast shimmer over the whole surface.
+    float chopAA = 1.0 - smoothstep(0.03, 0.12, footprint);
+    vec3 n1 = chrWvNoise(p * 5.0 + vec2(t * 0.9, -t * 0.7));
+    vec3 n2 = chrWvNoise(p * 9.0 + vec2(-t * 1.3, t * 1.1) + 7.7);
+    slope += (n1.yz * 5.0 * 0.0016 + n2.yz * 9.0 * 0.0007) * chopAA;
+    return slope;
 }
 
 void main() {
@@ -124,12 +147,20 @@ void main() {
     float pixelAngle = 2.0 / (abs(worldUBO.cameraProjMat[1][1]) * float(size.y));
     float footprint = dist * pixelAngle / max(abs(v.y), 0.08);
 
-    float rings = rippleRings(absPos.xz, worldUBO.gameTime * 1200.0, footprint) * min(strength, 2.0) * fade;
-    if (rings <= 1e-4) { return; }
+    vec2 slope = rippleSlope(absPos.xz, worldUBO.gameTime * 1200.0, footprint) * min(strength, 2.0) * fade;
+    if (dot(slope, slope) < 1e-8) { return; }
 
-    // Faint light-blue lines, like the sky caught on the edge of each ring. Brighter on bright water, never harsh.
-    vec3 tint = vec3(0.72, 0.86, 1.0);
-    float base = 0.22 + 0.45 * dot(scene.rgb, vec3(0.2126, 0.7152, 0.0722));
-    vec3 color = scene.rgb + tint * rings * base * 0.6;
+    // Real ripples barely show colour of their own: they bend what the water reflects and shows through. Shift the
+    // picture by the ripple slope and add the slight Fresnel brightening / darkening of the tilted ring sides.
+    vec2 shiftedUv = rippleProject(worldPos + vec3(slope.x, 0.0, slope.y) * 0.8);
+    vec3 color = scene.rgb;
+    if (all(greaterThanEqual(shiftedUv, vec2(0.0))) && all(lessThanEqual(shiftedUv, vec2(1.0))) &&
+        rippleIsRainWater(shiftedUv)) {
+        color = texture(rippleScene, shiftedUv).rgb;
+    }
+    vec3 rippleN = normalize(vec3(-slope.x, 1.0, -slope.y));
+    float cosFlat = abs(v.y);
+    float delta = rippleFresnel(abs(dot(rippleN, v))) - rippleFresnel(cosFlat);
+    color *= clamp(1.0 + delta * 3.0, 0.85, 1.25);
     outColor = vec4(clamp(color, vec3(0.0), vec3(1.0)), scene.a);
 }

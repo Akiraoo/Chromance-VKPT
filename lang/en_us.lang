@@ -33,6 +33,8 @@ render_pipeline.module.main_render.attribute.chr_block_light_strength=Block Ligh
 render_pipeline.module.main_render.attribute.chr_block_light_strength.description=How strongly torches, lanterns, glowstone and other emissive blocks light their surroundings.
 render_pipeline.module.main_render.attribute.chr_block_light_range=Block Light Range
 render_pipeline.module.main_render.attribute.chr_block_light_range.description=Distance in blocks after which block light fades to nothing. Small values give the "lighter in the dark" look.
+render_pipeline.module.main_render.attribute.chr_weak_emitter_light=Weak Glow Lighting
+render_pipeline.module.main_render.attribute.chr_weak_emitter_light.description=How much weakly glowing pixels light their surroundings: glowing ores and glow lichen from resource packs, dim decorative glow. They still glow themselves. Torches, lanterns, glowstone, end rods and lava are bright enough to stay unaffected. 1 = full light.
 render_pipeline.module.main_render.attribute.chr_block_light_candidates=Block Light Samples
 render_pipeline.module.main_render.attribute.chr_block_light_candidates.description=Candidates considered per surface when choosing which light to sample. More = less noise near many lights.
 render_pipeline.module.main_render.attribute.chr_block_light_samples=Block Light Rays

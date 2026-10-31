@@ -52,7 +52,15 @@ layout(location = 0) out vec4 fragColor;
 // Chromance: thinner, see-through rain. Whole streak columns are kept or dropped by a stable hash of their block
 // column, so the remaining drops do not flicker.
 float chrColumnHash(vec2 p) {
-    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    // Integer hash: exact for any block coordinate (a sin hash loses precision on coordinates in the thousands).
+    uvec2 q = uvec2(ivec2(floor(p)));
+    uint h = q.x * 0x8da6b343u ^ q.y * 0xd8163841u ^ 0x5bd1e995u;
+    h ^= h >> 16u;
+    h *= 0x7feb352du;
+    h ^= h >> 15u;
+    h *= 0x846ca68bu;
+    h ^= h >> 16u;
+    return float(h) * (1.0 / 4294967295.0);
 }
 
 void main() {

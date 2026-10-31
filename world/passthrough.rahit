@@ -8,4 +8,10 @@
 layout(location = 0) rayPayloadInEXT ChrRay ray;
 hitAttributeEXT vec2 attribs;
 
-void main() {}
+void main() {
+    if (chrHasBit(ray, CHR_EYE_PROBE_BIT)) {
+        // Probe for mob eye layers (world/surface_impl.glsl): everything else is invisible to it.
+        ignoreIntersectionEXT;
+        return;
+    }
+}

@@ -74,6 +74,9 @@
 #ifndef CHR_BLOCK_LIGHT_RANGE
 #    define CHR_BLOCK_LIGHT_RANGE 12.0
 #endif
+#ifndef CHR_WEAK_EMITTER_LIGHT
+#    define CHR_WEAK_EMITTER_LIGHT 0.0
+#endif
 #ifndef CHR_BLOCK_LIGHT_CANDIDATES
 #    define CHR_BLOCK_LIGHT_CANDIDATES 6
 #endif
@@ -159,3 +162,10 @@ const uint CHR_SHAPE_ROUND = 0u;
 const uint CHR_SHAPE_SQUARE = 1u;
 
 #endif
+
+// Overall scale of glowing surfaces (torch flames, lava, glowstone...) on top of the Emissive Brightness setting: the
+// glowing blocks themselves were blowing out to white. world.rgen and world/surface_impl.glsl must use the same
+// value (the denoiser is given the emission separately and subtracts it).
+const float CHR_EMISSIVE_SCALE = 0.65;
+// Overall scale of the light block lights throw on their surroundings, on top of the Block Light Strength setting.
+const float CHR_BLOCK_LIGHT_SCALE = 0.75;

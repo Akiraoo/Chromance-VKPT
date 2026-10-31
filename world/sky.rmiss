@@ -35,7 +35,9 @@ void main() {
         // Light from the sky dome onto the world (rays that bounced off a rough surface) is kept well below the sky's
         // own brightness, so the sun and moon stay the main light and their shadows read clearly.
         if (!chrHasBit(ray, CHR_CAMERA_SEGMENT_BIT) && !chrHasBit(ray, CHR_SHARP_BIT)) {
-            color *= clamp(float(CHR_SKY_GI_STRENGTH), 0.0, 2.0);
+            // Overcast: the whole grey sky is the light, so it lights the ground at full strength.
+            float skyGi = clamp(float(CHR_SKY_GI_STRENGTH), 0.0, 2.0);
+            color *= mix(skyGi, max(skyGi, 1.0), clamp(skyUBO.rainGradient, 0.0, 1.0));
         }
         if (chrHasBit(ray, CHR_CAMERA_SEGMENT_BIT) || chrHasBit(ray, CHR_SHARP_BIT)) {
             ChrPalette pal = chrPalette();

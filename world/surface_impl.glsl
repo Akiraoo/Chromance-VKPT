@@ -20,6 +20,11 @@
 
 layout(location = 0) rayPayloadInEXT ChrRay ray;
 layout(location = 1) rayPayloadEXT ChrShadowRay shadowRay;
+layout(location = 2) rayPayloadEXT ChrRay eyeProbe;
+// Eye adaptation state (exposure/adapt.comp); .w = night vision strength.
+layout(set = 5, binding = 10) uniform sampler2D chrEyeState;
+// Camera state written by world.rgen; .x = how much open sky the camera has above it.
+layout(set = 5, binding = 16, rgba32f) uniform readonly image2D chrCameraStateIn;
 hitAttributeEXT vec2 attribs;
 
 #include "lib/lights.glsl"
@@ -93,6 +98,21 @@ void main() {
                                                  vec4(1.0);
     float albedoEmission = bary.x * m0.albedoEmission + bary.y * m1.albedoEmission + bary.z * m2.albedoEmission;
     uint alphaMode = getAlphaMode(packedData);
+
+    // Spectator inside the ground: from inside solid rock every camera ray first meets the back of a cave wall. Shading
+    // those back faces sent every bounce ray wandering through the inside of the rock (no faces there to stop it),
+    // which made the frame several times slower. Solid terrain is closed, so its back faces are only ever seen from
+    // inside a block: camera rays pass through them, like Minecraft's own spectator view.
+    if (cameraSegment && bounce == 0u && isChunkGeometryBufferIndex(geometryBufferIndex) && alphaMode == ALPHA_MODE_OPAQUE &&
+        !hasWaterMaterial(m0) && dot(m0.norm, v) < -0.01) {
+        ray.origin = hitPos + gl_WorldRayDirectionEXT * 0.001;
+        ray.hitT = hitT;
+        ray.coneWidth += hitT * ray.coneSpread;
+        chrSetBit(ray, CHR_CONTINUE_BIT, true);
+        chrSetBit(ray, CHR_PASSED_BACKFACE_BIT, true);
+        chrSetBit(ray, CHR_STOP_BIT, false);
+        return;
+    }
 
     mat3 objectToWorld = mat3(gl_ObjectToWorld3x4EXT);
     mat3 normalMatrix = transpose(mat3(gl_WorldToObject3x4EXT));
@@ -248,7 +268,12 @@ void main() {
     if (chrHasBit(ray, CHR_IN_WATER_BIT) && !cameraSegment) {
         vec3 transmittance = exp(-chrWaterAbsorptionTinted(chrRayWaterTint(ray)) * hitT);
         ChrPalette palWater = chrPalette();
-        vec3 ambient = (palWater.zenith * 0.6 + palWater.lightColor * 0.05) * vec3(0.18, 0.42, 0.40);
+        // The blue-green glow of the water itself is daylight scattered inside it: only where the sky reaches. Water
+        // in a dark cave (an underground lake, a waterfall in a ravine) has no daylight to scatter and stays dark,
+        // lit only by whatever real light reaches it.
+        float skyHere = (bary.x * float(m0.lightUV.y) + bary.y * float(m1.lightUV.y) + bary.z * float(m2.lightUV.y)) / 16.0;
+        float daylightIn = smoothstep(1.0, 13.0, skyHere);
+        vec3 ambient = (palWater.zenith * 0.6 + palWater.lightColor * 0.05) * vec3(0.18, 0.42, 0.40) * daylightIn;
         ray.radiance += ray.throughput * ambient * (1.0 - transmittance);
         ray.throughput *= transmittance;
     }
@@ -260,12 +285,19 @@ void main() {
     chrSetRayHasPrevScenePos(ray, false);
     if (bounce == 0u) {
         vec3 prev;
-        if (chrLoadPreviousScenePos(geometryBufferIndex, gl_PrimitiveID, bary, prev)) {
+        // Radiance keeps last frame's geometry by buffer slot; when entities come and go the slot can hold a different
+        // mob, and a motion vector pointing at the wrong place makes the denoiser drag colours from elsewhere around
+        // moving mobs. Nothing in Minecraft moves more than a block per frame relative to the camera's own motion, so a
+        // previous position farther away than that is treated as unknown.
+        vec3 cameraDeltaNow = vec3(worldUBO.cameraPos.xyz - lastWorldUBO.cameraPos.xyz);
+        if (chrLoadPreviousScenePos(geometryBufferIndex, gl_PrimitiveID, bary, prev) &&
+            length((hitPos + cameraDeltaNow) - prev) < 1.0) {
             ray.prevScenePos = prev;
             chrSetRayHasPrevScenePos(ray, true);
         }
     }
     ray.normal = n;
+    chrSetBit(ray, CHR_ENTITY_HIT_BIT, !isChunkGeometryBufferIndex(geometryBufferIndex));
 
     ChrMaterial stored;
     // Water: a flat, fully opaque albedo. The vanilla water texture's alpha varies from texel to texel; it ended up in
@@ -291,7 +323,27 @@ void main() {
         bool sharpRay = cameraSegment || chrHasBit(ray, CHR_SHARP_BIT);
         bool sampledByPrevious = !sharpRay && bounce > 0u && (bounce - 1u) < uint(CHR_BLOCK_LIGHT_BOUNCES);
         if (!sampledByPrevious) {
-            ray.radiance += tint * emission * max(float(CHR_EMISSIVE_BRIGHTNESS), 0.0) * ray.throughput;
+            ray.radiance += tint * emission * max(float(CHR_EMISSIVE_BRIGHTNESS), 0.0) * CHR_EMISSIVE_SCALE * ray.throughput;
+        }
+    }
+
+    // ---- Mob eyes ------------------------------------------------------------------------------------------
+    // A tiny probe through this spot finds a glowing eye layer lying on this surface: every other surface ignores
+    // the probe (it carries CHR_EYE_PROBE_BIT), and the eye layer reports its glow (world/eyes.rahit). Seen directly or in mirror-like reflections only, so the eyes never light the cave.
+    // Only on entities (eye layers belong to mobs), so terrain-heavy views pay nothing.
+    if ((cameraSegment || chrHasBit(ray, CHR_SHARP_BIT)) && !isWater && !isChunkGeometryBufferIndex(geometryBufferIndex)) {
+        eyeProbe.state = CHR_EYE_PROBE_BIT;
+        eyeProbe.directLight = vec3(0.0);
+        eyeProbe.coneWidth = ray.coneWidth + gl_HitTEXT * ray.coneSpread;
+        eyeProbe.coneSpread = ray.coneSpread;
+        traceRayEXT(topLevelAS, gl_RayFlagsSkipClosestHitShaderEXT, 0xFFu, 1, 1, 2,
+                    hitPos - gl_WorldRayDirectionEXT * 0.003, 0.0, gl_WorldRayDirectionEXT, 0.006, 2);
+        vec3 eyeGlow = eyeProbe.directLight;
+        if (max(eyeGlow.r, max(eyeGlow.g, eyeGlow.b)) > 0.0) {
+            // Weighted by each pixel's own brightness, so the darker pixels of an eye stay darker and the eye keeps
+            // its pixel art instead of turning into one flat blob of light.
+            float own = max(eyeGlow.r, max(eyeGlow.g, eyeGlow.b));
+            ray.radiance += eyeGlow * own * 0.5 * max(float(CHR_EMISSIVE_BRIGHTNESS), 0.0) * ray.throughput;
         }
     }
 
@@ -316,16 +368,41 @@ void main() {
 
     ChrPalette pal = chrPalette();
     chrShadowWaterTint = chrRayWaterTint(ray);
-    vec3 direct = chrSampleCelestialLight(pal, s, hitPos, n, ng, v, opaque, insideBoat, ray.seed);
+    // Sun and moon, graded by how open this spot is to the sky (Minecraft's sky light level, 15 under open sky,
+    // dropping by one per block into overhangs, caves and rooms):
+    //   open (12 and up): the full calculation, as outdoors;
+    //   behind a small opening (1 to 11): only some points trace the sunlight ray, chosen at random and weighted
+    //     up to match, so the light through a crack still comes out right on average at a fraction of the cost;
+    //   sealed (0): no sunlight can get in, nothing is traced. While the camera itself is outdoors this step is
+    //     left out, so a wrongly reported level can never black out a sunlit spot in plain view.
+    float skyLevelHere = (bary.x * float(m0.lightUV.y) + bary.y * float(m1.lightUV.y) + bary.z * float(m2.lightUV.y)) / 16.0;
+    vec4 cameraState = imageLoad(chrCameraStateIn, ivec2(0));
+    bool cameraUnderground = cameraState.z > 0.5 && cameraState.x < 0.5;
+    float sunChance = skyLevelHere >= 12.0 ? 1.0 : mix(0.25, 1.0, clamp(skyLevelHere / 12.0, 0.0, 1.0));
+    if (skyLevelHere < 0.5) { sunChance = cameraUnderground ? 0.0 : 1.0; }
+    vec3 direct = vec3(0.0);
+    if (sunChance >= 1.0 || (sunChance > 0.0 && rand(ray.seed) < sunChance)) {
+        direct = chrSampleCelestialLight(pal, s, hitPos, n, ng, v, opaque, insideBoat, ray.seed) / sunChance;
+    }
     if (bounce < uint(CHR_BLOCK_LIGHT_BOUNCES) && !isWater) {
         // Several independent light samples on the surface the camera sees (less noise for the denoiser to
         // smear); one on deeper bounces.
         int lightSamples = bounce == 0u ? clamp(int(CHR_BLOCK_LIGHT_SAMPLES), 1, 8) : 1;
         vec3 blockLight = vec3(0.0);
-        for (int i = 0; i < lightSamples; ++i) {
-            blockLight += chrSampleBlockLight(s, hitPos, n, ng, v, opaque, insideBoat, ray.seed);
+        ChrLightSections lightSections = chrGatherLightSections(hitPos);
+        for (int i = 0; i < lightSamples && lightSections.total > 0u; ++i) {
+            blockLight += chrSampleBlockLight(s, hitPos, n, ng, v, opaque, insideBoat, lightSections, ray.seed);
         }
         direct += blockLight / float(lightSamples);
+    }
+    // Night vision on what is seen through water and glass or in a mirror-like reflection (the surfaces the camera
+    // sees directly get theirs in world.rgen): water turns see-through in the dark, and only the water that daylight
+    // or a light actually reaches shows its colour.
+    if (!cameraSegment && chrHasBit(ray, CHR_SHARP_BIT) && opaque) {
+        float nightVision = clamp(texelFetch(chrEyeState, ivec2(0), 0).w, 0.0, 1.0);
+        // Seen through water it stays a little darker, so the water still reads as water and not as a pale sheet.
+        float seenThroughWater = chrHasBit(ray, CHR_IN_WATER_BIT) ? 0.5 : 1.0;
+        direct += s.albedo * (1.0 - s.metallic) * 0.12 * nightVision * seenThroughWater;
     }
     direct *= ray.throughput;
     ray.radiance += direct;

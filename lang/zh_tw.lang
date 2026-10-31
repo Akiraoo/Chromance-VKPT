@@ -33,6 +33,8 @@ render_pipeline.module.main_render.attribute.chr_block_light_strength=方塊光�
 render_pipeline.module.main_render.attribute.chr_block_light_strength.description=火把、燈籠、螢石等發光方塊照亮周圍的強度。
 render_pipeline.module.main_render.attribute.chr_block_light_range=方塊光源範圍
 render_pipeline.module.main_render.attribute.chr_block_light_range.description=方塊光源完全消失的距離（格）。數值越小越像在黑暗中點亮打火機。
+render_pipeline.module.main_render.attribute.chr_weak_emitter_light=弱發光照明
+render_pipeline.module.main_render.attribute.chr_weak_emitter_light.description=微弱發光像素照亮周圍的程度，例如材質包的發光礦物、發光地衣、裝飾性的微光。它們本身照樣會發亮。火把、燈籠、螢石、終界燭、岩漿夠亮，不受影響。1 = 完整照明。
 render_pipeline.module.main_render.attribute.chr_block_light_candidates=方塊光源取樣
 render_pipeline.module.main_render.attribute.chr_block_light_candidates.description=每個表面挑選光源時考慮的候選數。越多在光源密集處雜訊越少。
 render_pipeline.module.main_render.attribute.chr_block_light_samples=方塊光源光線數

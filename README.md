@@ -33,6 +33,12 @@ and the physical quantity path tracing computes: the light travelling along ever
   you move** (no flickering).
 - **Limited light reach**: block light fades out over a configurable range, so a torch lights a small area and the
   rest of the cave stays dark, like a lighter in the dark.
+- **Faint glows stay decorative**: glow lichen, emissive ores from resource packs and other faint glows still glow
+  on screen but no longer light up a cave by default (*Weak Glow Lighting* turns that back on). Lava and other
+  bright emitters are toned down so they no longer blow out the picture.
+- **Caves**: underground, the sun is not traced at all; under a partial opening (a shaft, a cave mouth) it is traced
+  in proportion to how much sky you can see. Cave haze is darker and thinner, and underground water no longer
+  glows.
 - **Time-of-day palette**: white noon, golden sunrise and sunset, a pale blue sky in the blue hour just after
   sunset and before sunrise, and dim, almost neutral moonlight at night (no all-blue world).
 - **Sun and moon shape**: round discs or vanilla-style squares; the round moon shows its phase.
@@ -45,8 +51,9 @@ and the physical quantity path tracing computes: the light travelling along ever
 - **Water**: clear, biome-coloured water with reflection and refraction from above and below, gentle moving waves
   (drawn after denoising so they never freeze or smear), caustics on the sea floor, light shafts and a soft
   blue-green haze under water, clear refracting bubbles.
-- **Rain**: wet, glossy ground with a water film, puddles and round, randomly timed ripples; ripples on open water;
-  clear, refracting rain streaks. Only places that actually get rain and are open to the sky get wet (deserts and
+- **Rain**: wet, glossy ground with a water film, puddles and ripples that spread as several thin rings of
+  different sizes, overlapping at random, on puddles and open water; clear, refracting rain streaks. The sun is
+  hidden behind the rain clouds, so there are no sun shadows in rain. Only places that actually get rain and are open to the sky get wet (deserts and
   snowy biomes stay dry); the ground dries slowly after the rain.
 - **Clouds**: volumetric clouds (puffy cumulus in fair weather that close into a grey overcast deck as rain sets
   in) with moving cloud shadows, or vanilla block clouds, also casting shadows.
@@ -54,13 +61,18 @@ and the physical quantity path tracing computes: the light travelling along ever
 - **Eye adaptation**: stepping into daylight dazzles and settles quickly; darkness takes seconds to adjust to, and
   caves stay dark.
 - **Item and entity lights**: dropped light blocks (glowstone, torches, lanterns...) light their surroundings.
+- **Glowing mob eyes**: endermen, spiders, phantoms and other mobs with glowing eyes show them using Radiance's
+  own eye emission maps, without a resource pack and without lighting up the mob's body.
+- **Night vision**: the night vision effect brightens the world (including under water) with a soft lift instead
+  of washing it out.
+- **Spectator mode**: flying through walls stays smooth; the rays skip the walls you are inside.
 - **Bloom and depth of field**: soft glow around bright light; optional depth of field with autofocus (on the
   crosshair) or a fixed focus distance.
 - **Colour grading**: warm/cool split tone, filmic punch, contrast, saturation, vignette, film grain and a
   deband filter against 8-bit banding.
 - Works with Radiance's denoisers (DLSS Ray Reconstruction or NRD) and upscalers; DLSS Ray Reconstruction is
   recommended.
-- **Far coordinates**: waves, ripples, caustics and clouds stay smooth even a million blocks from the origin
+- **Far coordinates**: waves, ripples, puddles, rain, caustics and clouds stay smooth even a million blocks from the origin
   instead of breaking into a mosaic from float precision loss.
 
 ## Requirements
@@ -87,7 +99,7 @@ and the physical quantity path tracing computes: the light travelling along ever
 | Group | What it controls |
 | --- | --- |
 | Lighting | Indirect bounces, sun / moon / sky strength, ambient sky light, sun shafts, shadow softness, minimum light |
-| Block Lights | Strength, range, light rays and candidates per surface, sample limit, item and entity lights |
+| Block Lights | Strength, range, light rays and candidates per surface, sample limit, item and entity lights, weak glow lighting |
 | Sky & Time of Day | Sun and moon shape and size, golden hour, blue hour, night brightness and colour, night nebula |
 | Fog & Water | Haze, water murkiness, biome water colour, waves, underwater light shafts, clouds, cloud coverage, quality and shadows |
 | Rain | Wet ground, puddles, ripples, rain streak amount and opacity |
@@ -105,6 +117,11 @@ Performance tips: *Indirect Bounces*, *Block Light Rays*, *Cloud Quality* and *S
 4. ~~Exposure and photo mode: eye adaptation, dropped item lights, depth of field, bloom~~
 
 ## Known limitations
+
+- Faint emissive textures from resource packs (glowing ores, for example) are still in Radiance's light list even
+  when *Weak Glow Lighting* is off, so many of them in view (an x-ray view of a cave system) cost some frame rate.
+- With DLSS Ray Reconstruction off (NRD), small lights and caves are noisier; DLSS Ray Reconstruction is
+  recommended.
 
 - Very far from the origin (around a million blocks and beyond), the positions of blocks and lights themselves are
   limited by Minecraft's and Radiance's float precision, which a shader pack cannot fix. The pack's own patterns

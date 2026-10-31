@@ -142,38 +142,48 @@ vec3 chrSampleCelestialLight(ChrPalette pal, ChrSurface s, vec3 p, vec3 n, vec3 
 }
 
 // One block light sample (resampled from CHR_BLOCK_LIGHT_CANDIDATES candidates) with its shadow ray.
-vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opaque, bool insideBoat,
-                         inout uint seed) {
-    ivec3 center = ivec3(floor((worldUBO.cameraPos.xyz + dvec3(p)) / 16.0));
+// The chunk sections whose lights a shading point samples, gathered once per point and shared by its light
+// samples. Only the 2 x 2 x 2 sections nearest to the point: on each axis its own section and the neighbour on the
+// side it is closer to. Lights in the far neighbours are at least 8 blocks away and mostly faded out by the range,
+// and skipping them reads 8 section headers instead of 27.
+struct ChrLightSections {
+    uint index[8];
+    uint end[8];
+    int count;
+    uint total;
+};
 
-    // Gather the sections around the point that contain lights.
-    uint sectionIndex[27];
-    uint sectionEnd[27];
-    int sectionCount = 0;
-    uint total = 0u;
-    for (int z = -1; z <= 1; ++z) {
-        for (int y = -1; y <= 1; ++y) {
-            for (int x = -1; x <= 1; ++x) {
-                ivec3 section = center + ivec3(x, y, z);
-                uint index;
-                if (!chrSectionIndex(section, index)) { continue; }
-                ChrChunkLights c = chrChunkLights[index];
-                if (c.originX != section.x * 16 || c.originY != section.y * 16 || c.originZ != section.z * 16) {
-                    continue;
-                }
-                uint count = chrStaticLightCount(c) + chrEntityLightCount(c);
-                if (count == 0u) { continue; }
-                total += count;
-                sectionIndex[sectionCount] = index;
-                sectionEnd[sectionCount] = total;
-                ++sectionCount;
-            }
-        }
+ChrLightSections chrGatherLightSections(vec3 p) {
+    ChrLightSections ls;
+    ls.count = 0;
+    ls.total = 0u;
+    dvec3 absP = worldUBO.cameraPos.xyz + dvec3(p);
+    ivec3 center = ivec3(floor(absP / 16.0));
+    vec3 within = vec3(absP - dvec3(center) * 16.0) / 16.0;
+    ivec3 side = ivec3(step(vec3(0.5), within)) * 2 - 1;
+    for (int i = 0; i < 8; ++i) {
+        ivec3 section = center + ivec3(i & 1, (i >> 1) & 1, (i >> 2) & 1) * side;
+        uint index;
+        if (!chrSectionIndex(section, index)) { continue; }
+        ChrChunkLights c = chrChunkLights[index];
+        if (c.originX != section.x * 16 || c.originY != section.y * 16 || c.originZ != section.z * 16) { continue; }
+        uint count = chrStaticLightCount(c) + chrEntityLightCount(c);
+        if (count == 0u) { continue; }
+        ls.total += count;
+        ls.index[ls.count] = index;
+        ls.end[ls.count] = ls.total;
+        ++ls.count;
     }
+    return ls;
+}
+
+vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opaque, bool insideBoat,
+                         ChrLightSections ls, inout uint seed) {
+    uint total = ls.total;
     if (total == 0u) { return vec3(0.0); }
 
     dvec3 cameraPos = worldUBO.cameraPos.xyz;
-    float strength = max(float(CHR_BLOCK_LIGHT_STRENGTH), 0.0);
+    float strength = max(float(CHR_BLOCK_LIGHT_STRENGTH), 0.0) * CHR_BLOCK_LIGHT_SCALE;
     int candidates = clamp(int(CHR_BLOCK_LIGHT_CANDIDATES), 1, 32);
 
     float wSum = 0.0;
@@ -185,9 +195,9 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
     for (int i = 0; i < candidates; ++i) {
         uint pick = min(uint(rand(seed) * float(total)), total - 1u);
         int k = 0;
-        while (k < sectionCount - 1 && pick >= sectionEnd[k]) { ++k; }
-        uint first = k == 0 ? 0u : sectionEnd[k - 1];
-        ChrChunkLights c = chrChunkLights[sectionIndex[k]];
+        while (k < ls.count - 1 && pick >= ls.end[k]) { ++k; }
+        uint first = k == 0 ? 0u : ls.end[k - 1];
+        ChrChunkLights c = chrChunkLights[ls.index[k]];
         ChrPackedLight light = chrLoadLight(c, pick - first);
         // Lights on entities (dropped light blocks such as glowstone or torches, held items, glowing mobs) are tiny
         // compared with the block they stand for: a dropped glowstone is a quarter-size cube. Boost them so they
@@ -213,16 +223,28 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
         vec3 f = chrEvalBrdfCos(s, n, v, l);
         vec3 le = max(light.radiance.rgb, vec3(0.0)) * max(light.radiance.a, 1.0) * strength * fade;
         if (entityLight) {
-            // Mob eyes (spiders, endermen) are strongly saturated red / purple and should not light the world;
-            // dropped light blocks are warm white, yellow or cyan and get the boost.
+            // Mob eyes and glowing body parts (spider and cave spider eyes, endermen, endermites, phantoms...) do not
+            // light the world: their glow stays on their own pixels (world/eyes.rchit). Mob glow is red, magenta or
+            // purple; dropped light blocks glow warm white, yellow, orange or cyan and keep lighting their
+            // surroundings. (A dropped redstone torch is caught as well, a fair trade.)
             vec3 rc = max(light.radiance.rgb, vec3(0.0));
             float peak = max(rc.r, max(rc.g, rc.b));
             float saturation = peak > 0.0 ? (peak - min(rc.r, min(rc.g, rc.b))) / peak : 0.0;
-            float notEyes = 1.0 - smoothstep(0.62, 0.8, saturation);
+            float purple = smoothstep(1.0, 1.25, min(rc.r, rc.b) / max(rc.g, 1e-4));   // red and blue above green
+            float red = smoothstep(1.8, 2.4, rc.r / max(max(rc.g, rc.b), 1e-4));       // red far above the rest
+            float notEyes = 1.0 - max(purple, red) * smoothstep(0.2, 0.4, saturation);
             le *= max(float(CHR_ENTITY_LIGHT_BOOST), 0.0) * notEyes;
+        } else {
+            // Weak glow from resource packs (glowing ore pixels, glow lichen, dim decorative emission) mostly lights
+            // only itself; real light sources (torches, lanterns, glowstone, end rods, lava...) glow much brighter
+            // and keep their full light. Peak radiance = pixel colour x labPBR emission.
+            float peak = max(light.radiance.r, max(light.radiance.g, light.radiance.b));
+            float weakKeep = clamp(float(CHR_WEAK_EMITTER_LIGHT), 0.0, 1.0);
+            le *= mix(weakKeep, 1.0, smoothstep(0.15, 0.4, peak));
         }
-        // Soften the inverse square very close to the light to avoid hot spots on adjacent blocks.
-        vec3 contribution = le * f * cosLight / max(dist2, 0.06);
+        // Soften the inverse square close to the light (within about half a block) so the block a light is mounted on
+        // does not blow out into a white hot spot.
+        vec3 contribution = le * f * cosLight / (dist2 + 0.25);
         float target = chrLuminance(contribution);
         if (!(target > 0.0) || isinf(target)) { continue; }
         // Source pdf = 1 / (total * area)

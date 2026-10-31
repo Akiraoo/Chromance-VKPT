@@ -38,7 +38,18 @@ ChrRainMap chrRainMap(vec3 position, float up) {
     // Top faces belong to the block below them; side faces to their own block.
     int surfaceBlockY = cameraCell.y + int(floor(rel.y - (up > 0.5 ? 0.001 : -0.001)));
     ivec4 centre = chrRainColumn(textureId, column);
-    if (centre.b == 0 || chrRainColumnBlocked(centre, surfaceBlockY)) { return m; }
+    if (chrRainColumnBlocked(centre, surfaceBlockY)) { return m; }
+    // Whether the biome gets rain changes in 4 x 4 block steps (Minecraft's biome grid), which left hard-edged dry
+    // rectangles in wet ground at biome borders (a beach next to a desert). Blend it over a few blocks instead:
+    // the share of rainy columns in a ring around the point, so wet ground fades out gradually.
+    float rainyBiome = centre.b > 0 ? 1.0 : 0.0;
+    const ivec2 ring[8] = ivec2[](ivec2(3, 0), ivec2(-3, 0), ivec2(0, 3), ivec2(0, -3),
+                                  ivec2(2, 2), ivec2(-2, 2), ivec2(2, -2), ivec2(-2, -2));
+    for (int i = 0; i < 8; ++i) {
+        rainyBiome += chrRainColumn(textureId, column + ring[i]).b > 0 ? 1.0 : 0.0;
+    }
+    rainyBiome = smoothstep(0.15, 0.85, rainyBiome / 9.0);
+    if (rainyBiome <= 0.0) { return m; }
 
     // Soften the edge towards covered neighbours so roof edges do not cut a hard line.
     vec2 within = fract(rel.xz);
@@ -54,7 +65,7 @@ ChrRainMap chrRainMap(vec3 position, float up) {
     if (chrRainColumnBlocked(chrRainColumn(textureId, column + side), surfaceBlockY)) {
         edge2 = min(edge2, dot(edge, edge));
     }
-    m.exposure = smoothstep(0.0, 0.5, sqrt(edge2)) * (1.0 - smoothstep(220.0, 238.0, max(abs(position.x), abs(position.z))));
+    m.exposure = smoothstep(0.0, 0.5, sqrt(edge2)) * rainyBiome * (1.0 - smoothstep(220.0, 238.0, max(abs(position.x), abs(position.z))));
     return m;
 }
 

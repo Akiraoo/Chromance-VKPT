@@ -65,6 +65,12 @@ const uint CHR_SHARP_BIT = 1u << 21u;
 // The primary hit carries rain ripples. Ripples belong to the surface, not to what it reflects, so the denoiser
 // must move their history with the surface instead of with the reflected scene.
 const uint CHR_RIPPLE_BIT = 1u << 22u;
+// A short probe ray looking for a mob's glowing eye layer on the surface just hit (world/eyes.rahit).
+const uint CHR_EYE_PROBE_BIT = 1u << 23u;
+// The current hit is an entity (mob, item, player...), not terrain.
+const uint CHR_ENTITY_HIT_BIT = 1u << 24u;
+// The camera ray just passed the back face of solid terrain (spectator inside the ground).
+const uint CHR_PASSED_BACKFACE_BIT = 1u << 25u;
 
 const uint CHR_LOBE_DIFFUSE = 0u;
 const uint CHR_LOBE_SPECULAR = 1u;

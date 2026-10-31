@@ -121,6 +121,15 @@
       "define": "CHR_BLOCK_LIGHT_RANGE"
     },
     {
+      "name": "render_pipeline.module.main_render.attribute.chr_weak_emitter_light",
+      "description": "render_pipeline.module.main_render.attribute.chr_weak_emitter_light.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.0",
+      "group": "shader_pack_settings_screen.group.block_light",
+      "performance_impact": "low",
+      "define": "CHR_WEAK_EMITTER_LIGHT"
+    },
+    {
       "name": "render_pipeline.module.main_render.attribute.chr_block_light_candidates",
       "description": "render_pipeline.module.main_render.attribute.chr_block_light_candidates.description",
       "type": "int_range:1-16",
@@ -637,6 +646,17 @@
       "address_mode": "clamp_to_edge"
     },
     {
+      "name": "camera_state",
+      "type": "intermediate",
+      "format": "R32G32B32A32_SFLOAT",
+      "width": 1,
+      "height": 1,
+      "shared": true,
+      "storage_binding": 16,
+      "filter": "nearest",
+      "address_mode": "clamp_to_edge"
+    },
+    {
       "name": "cloud_history",
       "type": "intermediate",
       "shared": true,
@@ -900,7 +920,8 @@
           "cloud_shape_noise",
           "cloud_detail_noise",
           "cloud_shadow",
-          "eye_exposure"
+          "eye_exposure",
+          "camera_state"
         ]
       },
       "outputs": {
@@ -919,7 +940,8 @@
           "out:first_hit_clear",
           "out:first_hit_refraction",
           "out:first_hit_base_emission",
-          "out:fog_image"
+          "out:fog_image",
+          "camera_state"
         ]
       },
       "rgen": "world/world.rgen",
@@ -979,6 +1001,13 @@
           "shaders": {
             "rchit": "world/emissive_only.rchit",
             "rahit": "world/passthrough.rahit"
+          }
+        },
+        "eyes": {
+          "type": "triangle",
+          "shaders": {
+            "rchit": "world/surface.rchit",
+            "rahit": "world/eyes.rahit"
           }
         },
         "lightning": {
@@ -1511,7 +1540,7 @@
           "bloom_a",
           "bloom_b",
           "bloom_c"
-        ]
+        , "eye_exposure"]
       },
       "target": "out:ldr",
       "definitions": {

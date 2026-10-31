@@ -1,0 +1,55 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+// Mob eye layer (spiders, endermen, ...). Minecraft draws it additively in the same plane as the head; a ray tracer
+// picks one of two surfaces in one plane more or less at random, so ordinary rays skip the layer entirely.
+// Instead, the head's closest-hit shader sends a tiny probe ray through the same spot that ignores opaque geometry
+// (world/surface_impl.glsl); here the probe reads the eye texture and the emission map Radiance ships for it
+// (spider_eyes_s.png, enderman_eyes_s.png, ...) texel-exactly and hands back the glow.
+#include "lib/resources_rt.glsl"
+#include "lib/payload.glsl"
+#include "interface/color_space.glsl"
+#include "lib/texturing.glsl"
+
+layout(location = 0) rayPayloadInEXT ChrRay ray;
+hitAttributeEXT vec2 attribs;
+
+vec4 chrEyeTexel(uint textureID, vec2 uv) {
+    ivec2 size = textureSize(textures[nonuniformEXT(textureID)], 0);
+    ivec2 texel = clamp(ivec2(floor(uv * vec2(size))), ivec2(0), size - ivec2(1));
+    return texelFetch(textures[nonuniformEXT(textureID)], texel, 0);
+}
+
+void main() {
+    if (!chrHasBit(ray, CHR_EYE_PROBE_BIT)) {
+        ignoreIntersectionEXT;
+        return;
+    }
+    uint geometryBufferIndex = getGeometryBufferIndex(gl_InstanceCustomIndexEXT, gl_GeometryIndexEXT);
+    uint i0, i1, i2;
+    MaterialVertex m0, m1, m2;
+    loadTriangleIndices(geometryBufferIndex, gl_PrimitiveID, i0, i1, i2);
+    loadTriangleMaterial(geometryBufferIndex, i0, i1, i2, m0, m1, m2);
+    uint packedData = m0.packedData;
+    if (hasTexture(packedData)) {
+        vec3 bary = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
+        vec2 uv = bary.x * m0.textureUV + bary.y * m1.textureUV + bary.z * m2.textureUV;
+        vec4 c = chrEyeTexel(m0.textureID, uv);
+        vec3 tint = c.rgb * (hasColorLayer(packedData) ? (bary.x * m0.colorLayer + bary.y * m1.colorLayer + bary.z * m2.colorLayer).rgb : vec3(1.0));
+        // Emission from the layer's labPBR map (alpha: 0-254 emission, 255 none); without a map, bright pixels glow.
+        float emission = smoothstep(0.25, 0.6, max(tint.r, max(tint.g, tint.b)));
+        int specularId = mapping.entries[m0.textureID].specular;
+        if (specularId >= 0) {
+            int id = int(round(chrEyeTexel(uint(specularId), uv).a * 255.0));
+            emission = id >= 255 ? 0.0 : float(id) / 254.0;
+        }
+        if (c.a >= 0.5 && emission > 0.0) {
+            ray.directLight = max(ray.directLight, tint * emission);
+        }
+    }
+    ignoreIntersectionEXT;
+}

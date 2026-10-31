@@ -60,6 +60,9 @@ layout(set = 4, binding = 15) uniform sampler2D bloomC;
 
 layout(set = 3, binding = 5, r8ui) readonly uniform uimage2D gradeSegmentation;
 
+// Eye adaptation state (exposure/adapt.comp); .w = night vision strength.
+layout(set = 4, binding = 10) uniform sampler2D gradeEyeState;
+
 layout(location = 0) out vec4 outColor;
 
 const vec3 GRADE_LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -147,6 +150,14 @@ void main() {
         scene.rgb = gradeToSrgb(lin);
     }
 #endif
+    // Night vision, part two: a mild gamma lift of the finished picture on top of the even light added in world.rgen.
+    // Kept small: a strong lift also lifts the denoiser's leftover noise in the dark.
+    {
+        float nightVision = clamp(texelFetch(gradeEyeState, ivec2(0), 0).w, 0.0, 1.0);
+        if (nightVision > 0.001) {
+            scene.rgb = pow(clamp(scene.rgb, vec3(0.0), vec3(1.0)), vec3(1.0 / (1.0 + 0.5 * nightVision)));
+        }
+    }
     float rain = clamp(skyUBO.rainGradient, 0.0, 1.0) * (skyUBO.cameraSubmersionType == 3u ? 1.0 : 0.0);
     vec3 color = gradeContrast(scene.rgb, float(CHR_GRADE_CONTRAST));
     vec3 linearColor = gradeSaturation(gradeToLinear(color), rain);
