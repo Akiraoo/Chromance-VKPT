@@ -9,7 +9,7 @@
 // The shape comes from two tiling 3D noise volumes (a Perlin-Worley "shape" noise and a Worley "detail" noise,
 // both taken from Radiance's Vanilla PT, GPL-3.0) and a 2D coverage field.
 //
-// Everything that moves is periodic: the wind carries the clouds exactly one noise tile (1200 blocks) per 1200
+// Everything that moves is periodic: the wind carries the clouds exactly one noise tile (about 1170 blocks) per 1200
 // seconds, the length of Minecraft's 20-minute game-time cycle, so the clouds do not jump when gameTime wraps.
 //
 // Requires: worldUBO, skyUBO, lib/palette.glsl, lib/settings.glsl.
@@ -30,7 +30,9 @@ layout(set = CHR_CLOUD_TEX_SET, binding = CHR_CLOUD_DETAIL_BINDING) uniform samp
 const float CHR_CLOUD_BOTTOM = 200.0;
 const float CHR_CLOUD_TOP = 330.0;
 const float CHR_CLOUD_MID = 0.5 * (CHR_CLOUD_BOTTOM + CHR_CLOUD_TOP);
-const float CHR_CLOUD_TILE = 1200.0;          // every noise repeats after this many blocks
+// Every cloud noise repeats after this many blocks. 16384 / 14: the 16384-block coordinate repeat of
+// lib/origin.glsl is a whole number of tiles, so the clouds have no seam where the coordinates wrap.
+const float CHR_CLOUD_TILE = 16384.0 / 14.0;
 const float CHR_CLOUD_SIGMA = 0.045;          // extinction per block at density 1
 const float CHR_CLOUD_MAX_DISTANCE = 9000.0;
 

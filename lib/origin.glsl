@@ -6,13 +6,14 @@
 // draws (waves, rain ripples, caustics, clouds) used absolute = relative + float(cameraPos), so out there it broke
 // into a grid of flat squares. The camera position arrives in double precision; wrap it here, in doubles, into a
 // 16384-block repeat before going to floats. The patterns repeat every 16384 blocks (a seam once per 16384 blocks
-// is far better than a mosaic everywhere). Y is left as it is.
+// is far better than a mosaic everywhere). The repeat is centred on the origin, so the seams sit at +-8192,
+// +-24576, ... and never at 0, where players cross most often. Y is left as it is.
 
 const double CHR_ORIGIN_PERIOD = 16384.0;
 
-// Camera position, X and Z wrapped into [0, 16384), as a float. absolute (wrapped) = relative + this.
+// Camera position, X and Z wrapped into [-8192, 8192), as a float. absolute (wrapped) = relative + this.
 vec3 chrWrappedCamera(dvec3 c) {
-    dvec2 xz = c.xz - floor(c.xz / CHR_ORIGIN_PERIOD) * CHR_ORIGIN_PERIOD;
+    dvec2 xz = c.xz - floor((c.xz + CHR_ORIGIN_PERIOD * 0.5) / CHR_ORIGIN_PERIOD) * CHR_ORIGIN_PERIOD;
     return vec3(float(xz.x), float(c.y), float(xz.y));
 }
 
