@@ -66,7 +66,8 @@ void main() {
     bool initialised = state.z > 0.5 && state.x > 0.0 && !isinf(state.x);
     float current = initialised ? state.x : 1.0;
     // Brightness of the scene itself (the frame was rendered with the current exposure).
-    float sceneEv = logSum / max(weightSum, 1e-4) - log2(current);
+    // The frame was also scaled by the overall brightness setting; take that out too, or adaptation would undo it.
+    float sceneEv = logSum / max(weightSum, 1e-4) - log2(current * max(float(CHR_BRIGHTNESS), 0.01));
 
     // Target: partially undo the scene brightness around a mid level, within limits.
     const float keyEv = -1.5;   // the brightness a daylight scene sits at without adaptation

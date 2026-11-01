@@ -6,6 +6,22 @@
 // float() because Radiance writes 1.0 as "1".
 
 // Lighting
+// Overall brightness of the picture (an exposure multiplier, applied before tone mapping).
+#ifndef CHR_BRIGHTNESS
+#    define CHR_BRIGHTNESS 0.5
+#endif
+// Where the border fog (hiding the far edge of the world) starts, as a fraction of the drawn distance.
+#ifndef CHR_BORDER_FOG_START
+#    define CHR_BORDER_FOG_START 0.92
+#endif
+// Metals (labPBR) reflect more sharply than their roughness map says: 0 = as the map says.
+#ifndef CHR_METAL_SHARPNESS
+#    define CHR_METAL_SHARPNESS 0.8
+#endif
+// Convert texture colours from sRGB to linear light (more contrast and colour, less washed out).
+#ifndef CHR_LINEAR_TEXTURES
+#    define CHR_LINEAR_TEXTURES 1
+#endif
 #ifndef CHR_INDIRECT_BOUNCES
 #    define CHR_INDIRECT_BOUNCES 2
 #endif
@@ -115,7 +131,7 @@
 #    define CHR_FOG_DENSITY 1.0
 #endif
 #ifndef CHR_WATER_FOG_DENSITY
-#    define CHR_WATER_FOG_DENSITY 1.0
+#    define CHR_WATER_FOG_DENSITY 0.75
 #endif
 
 // Materials
@@ -128,6 +144,10 @@
 #ifndef CHR_WATER_WAVE_OVERLAY
 #    define CHR_WATER_WAVE_OVERLAY 1
 #endif
+// Water surface seen from below: 0 real (Snell's window), 1 mirror (sharp window, no partial reflection), 2 clear.
+#ifndef CHR_WATER_SNELL_WINDOW
+#    define CHR_WATER_SNELL_WINDOW 0u
+#endif
 #ifndef CHR_WATER_WAVE_OVERLAY_STRENGTH
 #    define CHR_WATER_WAVE_OVERLAY_STRENGTH 1.0
 #endif
@@ -135,7 +155,7 @@
 #    define CHR_WATER_BIOME_TINT 0.6
 #endif
 #ifndef CHR_WATER_GOD_RAYS
-#    define CHR_WATER_GOD_RAYS 0.4
+#    define CHR_WATER_GOD_RAYS 0.2
 #endif
 #ifndef CHR_WATER_WAVE_STRENGTH
 #    define CHR_WATER_WAVE_STRENGTH 0.0
@@ -155,7 +175,7 @@ const uint CHR_CLOUD_MODE_VOLUMETRIC = 2u;
 #    define CHR_CLOUD_STEPS 32
 #endif
 #ifndef CHR_CLOUD_SHADOW_STRENGTH
-#    define CHR_CLOUD_SHADOW_STRENGTH 0.85
+#    define CHR_CLOUD_SHADOW_STRENGTH 0.45
 #endif
 
 const uint CHR_SHAPE_ROUND = 0u;

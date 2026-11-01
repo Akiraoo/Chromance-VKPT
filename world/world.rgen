@@ -55,10 +55,11 @@ float chrExposure() {
 #if CHR_EYE_ADAPTATION
     vec4 state = texelFetch(chrEyeExposure, ivec2(0), 0);
     float k = state.x;
-    if (state.z < 0.5 || !(k > 0.0) || isinf(k)) { return 1.0; }
-    return clamp(k, 0.05, 20.0);
+    float brightness = max(float(CHR_BRIGHTNESS), 0.01);
+    if (state.z < 0.5 || !(k > 0.0) || isinf(k)) { return brightness; }
+    return clamp(k, 0.05, 20.0) * brightness;
 #else
-    return 1.0;
+    return max(float(CHR_BRIGHTNESS), 0.01);
 #endif
 }
 
@@ -82,7 +83,8 @@ const uint SEGMENT_CLOUDY = 64u;
 
 // Bits kept from one trace to the next; everything else describes a single hit.
 const uint CHR_PERSISTENT_BITS = CHR_INSIDE_BOAT_BIT | CHR_FROM_DIFFUSE_BIT | CHR_IN_WATER_BIT |
-                                 CHR_CAMERA_SEGMENT_BIT | CHR_IGNORE_WATER_SELF_BIT | CHR_SHARP_BIT;
+                                 CHR_CAMERA_SEGMENT_BIT | CHR_IGNORE_WATER_SELF_BIT | CHR_SHARP_BIT |
+                                 CHR_UNDERWATER_MIRROR_BIT | CHR_VOID_SKY_BIT;
 
 // Set when this pixel's camera ray started inside solid ground (spectator): its view is an x-ray through rock, so it
 // gets a single indirect bounce instead of the full count.
@@ -112,9 +114,13 @@ void chrProbeCameraWater() {
 // late, which is invisible), so the cost is five rays per frame instead of five per pixel.
 layout(set = 5, binding = 16, rgba32f) uniform image2D chrCameraState;
 float chrCameraSkyAccess = 1.0;
+float chrCameraSkyEased = 1.0;
+// The camera is inside solid ground (spectator), measured last frame by pixel 0 (camera state .y).
+bool chrCameraInGround = false;
 void chrProbeCameraSky() {
     vec4 state = imageLoad(chrCameraState, ivec2(0));
     chrCameraSkyAccess = state.z > 0.5 ? clamp(state.x, 0.0, 1.0) : 1.0;
+    chrCameraInGround = state.z > 0.5 && state.y > 0.5;
     if (gl_LaunchIDEXT.x != 0u || gl_LaunchIDEXT.y != 0u) { return; }
     float measured = 1.0;
     if (worldUBO.skyType == 1u) {
@@ -124,14 +130,13 @@ void chrProbeCameraSky() {
         float open = 0.0;
         for (int i = 0; i < 5; ++i) {
             shadowRay.throughput = vec3(1.0);
-            shadowRay.visible = 0u;
+            shadowRay.visible = 8u;   // visibility only: skip the caustics
             traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, eye, 0.01, dirs[i], 512.0, 1);
             if ((shadowRay.visible & 1u) != 0u) { open += 1.0; }
         }
         measured = open / 5.0;
     }
-    float eased = state.z > 0.5 ? mix(state.x, measured, 0.15) : measured;
-    imageStore(chrCameraState, ivec2(0), vec4(eased, 0.0, 1.0, 0.0));
+    chrCameraSkyEased = state.z > 0.5 ? mix(state.x, measured, 0.15) : measured;
 }
 
 void initRay(vec3 origin, vec3 direction, uint seed, float coneSpread, out ChrRay r) {
@@ -146,6 +151,7 @@ void initRay(vec3 origin, vec3 direction, uint seed, float coneSpread, out ChrRa
     r.normal = vec3(0.0);
     r.state = CHR_CAMERA_SEGMENT_BIT;
     if (skyUBO.cameraSubmersionType == 1u) { r.state |= CHR_IN_WATER_BIT; }
+    if (chrCameraInGround) { r.state |= CHR_VOID_SKY_BIT; }
     r.prevScenePos = vec3(0.0);
     r.hasPrevScenePos = 0u;
     r.directLight = vec3(0.0);
@@ -254,12 +260,23 @@ void tracePrimary(vec3 eye, vec3 dir, bool hand, inout ChrRay r, out FirstHit fh
 
 // Albedo of the first surface the last traceBounces call reached (black for sky).
 vec3 chrFirstBounceAlbedo = vec3(0.0);
+bool chrWaterSplit = false;
 
 void traceBounces(inout ChrRay r, uint startBounce, bool hand, out bool hasSecondHit, out float secondHitDistance) {
     hasSecondHit = false;
     secondHitDistance = 0.0;
     uint bounces = uint(clamp(int(CHR_INDIRECT_BOUNCES), 0, 8));
-    if (chrInsideGround) { bounces = min(bounces, 1u); }
+    // X-ray view from inside the ground (spectator): no indirect bounces at all. What the camera sees are the inner
+    // walls of closed caves; they get an even "void light" (see main) plus their own direct light from the block
+    // lights inside them. Tracing bounces through the rock around them was slow and lit nothing anyway.
+    if (chrInsideGround) { bounces = 0u; }
+    // Camera under water: the indirect light down there is dim and blue and the water haze covers most of it, while
+    // every bounce ray has to cross long stretches of water (and the mirror outside Snell's window doubles the
+    // paths). One indirect bounce looks the same and is far cheaper.
+    if (skyUBO.cameraSubmersionType == 1u) { bounces = min(bounces, 1u); }
+    // Water seen from above traces two paths per pixel (reflection and the view into the water): each gets one
+    // segment fewer, so a big pond or a waterfall in view costs about what solid ground does.
+    if (chrWaterSplit) { bounces = max(bounces, 2u) - 1u; }
     float clampLimit = max(float(CHR_INDIRECT_CLAMP), 0.1);
     for (uint b = startBounce; b < startBounce + bounces; ++b) {
         if (chrHasBit(r, CHR_STOP_BIT)) { break; }
@@ -271,7 +288,11 @@ void traceBounces(inout ChrRay r, uint startBounce, bool hand, out bool hasSecon
         vec3 o = r.origin;
         vec3 d = r.direction;
         ray = r;
-        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, mask, 1, 1, MISS_WORLD, o, 0.001, d, len, 0);
+        // Rough indirect light (a ray bounced off a diffuse surface) treats cut-out blocks as solid: leaves, vines,
+        // grass and glow berries skip their per-pixel alpha test. In foliage-heavy places (lush caves, forests) that
+        // test on every bounce ray was a large share of the frame; the blurred indirect light looks the same.
+        uint traceFlags = chrHasBit(r, CHR_FROM_DIFFUSE_BIT) ? gl_RayFlagsOpaqueEXT : gl_RayFlagsNoneEXT;
+        traceRayEXT(topLevelAS, traceFlags, mask, 1, 1, MISS_WORLD, o, 0.001, d, len, 0);
         r = ray;
         chrSetBit(r, CHR_IGNORE_WATER_SELF_BIT, false);
 
@@ -311,13 +332,17 @@ vec3 reinhardMax(vec3 c) {
 // compose pass; transmittance -1 means no fog.
 vec3 chrUnderwaterTransmittance = vec3(1.0);
 
-// Haze colour under water: the pack's pale teal, leaning towards the biome's water colour.
+// Haze colour under water: a clear cyan-blue, leaning towards the biome's water colour.
 vec3 chrUnderwaterHaze() {
-    vec3 haze = vec3(0.30, 0.62, 0.58);
+    // Clear sea water seen sideways: cyan-blue, between the green and the deep blue.
+    vec3 haze = vec3(0.17, 0.48, 0.70);
     if (chrCameraWaterTint != 0u) {
-        vec3 biome = unpackUnorm4x8(chrCameraWaterTint).rgb;
-        biome *= 0.62 / max(max(biome.r, max(biome.g, biome.b)), 1e-3);
-        haze = mix(haze, biome, clamp(float(CHR_WATER_BIOME_TINT), 0.0, 1.0) * 0.6);
+        // Only biomes whose water differs from the default colour (warm oceans, swamps, ...) tint the haze, by how
+        // far they differ; ordinary water keeps the pack's teal.
+        vec3 biome = max(unpackUnorm4x8(chrCameraWaterTint).rgb, vec3(0.05));
+        vec3 rel = biome / CHR_DEFAULT_WATER_COLOR;
+        rel /= max(dot(rel, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+        haze *= mix(vec3(1.0), clamp(rel, vec3(0.3), vec3(2.5)), clamp(float(CHR_WATER_BIOME_TINT), 0.0, 1.0) * 0.6);
     }
     return haze;
 }
@@ -355,7 +380,7 @@ vec3 chrUnderwaterShafts(ChrPalette pal, vec3 dir, float dist, vec3 absorb) {
     if (!foundSurface) { return vec3(0.0); }
 
     float t = worldUBO.gameTime * 1200.0;
-    const int STEPS = 9;
+    const int STEPS = 6;
     float jitter = float(chrFogSeed & 1023u) / 1024.0;
 
     // Sunlight visibility at a few points along the view (blocks overhead cast dark gaps into the shafts).
@@ -367,7 +392,7 @@ vec3 chrUnderwaterShafts(ChrPalette pal, vec3 dir, float dist, vec3 absorb) {
         visible[k] = 0.0;
         if (vx.y >= surfaceY) { continue; }
         shadowRay.throughput = vec3(1.0);
-        shadowRay.visible = 0u;
+        shadowRay.visible = 8u;   // visibility only: skip the caustics
         traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, vx, 0.01, L, 512.0, 1);
         visible[k] = (shadowRay.visible & 1u) != 0u ? 1.0 : 0.0;
     }
@@ -385,13 +410,14 @@ vec3 chrUnderwaterShafts(ChrPalette pal, vec3 dir, float dist, vec3 absorb) {
         // Caustics of the longer waves, and only their focused part: dark gaps between the beams.
         float c = chrCausticFast(crossing.xz, t, min(below, 8.0), 0.3);
         float beam = max(c - 1.05, 0.0);
-        sum += exp(-absorb * (s + toSurface)) * (beam * beam * 10.0);
+        // Shafts fade with depth: the deeper the point, the less focused sunlight reaches it.
+        sum += exp(-absorb * (s + toSurface)) * exp(-below * 0.07) * (beam * beam * 10.0);
     }
     // A moderate forward lobe: the beams show around the sun instead of melting into one glow at its centre.
     float g = 0.4;
     float cosTheta = dot(dir, L);
     float phase = (1.0 - g * g) / (12.566 * pow(max(1.0 + g * g - 2.0 * g * cosTheta, 1e-3), 1.5));
-    vec3 shafts = sum * (marchLen / float(STEPS)) * pal.lightColor * phase * 0.05 * amount;
+    vec3 shafts = sum * (marchLen / float(STEPS)) * pal.lightColor * phase * 0.02 * amount;
     // Soft ceiling so looking straight into the sun never washes the whole view out.
     return shafts / (1.0 + shafts * 3.0);
 }
@@ -420,13 +446,13 @@ vec3 chrAirShafts(ChrPalette pal, vec3 dir, float dist, float hazeDensity) {
         float s = (float(i) + jitter) / float(STEPS) * marchLen;
         vec3 x = eye + dir * s;
         shadowRay.throughput = vec3(1.0);
-        shadowRay.visible = 0u;
+        shadowRay.visible = 8u;   // visibility only: skip the caustics
             traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 0, 0, 0, x, 0.02, L, 512.0, 1);
         float v = (shadowRay.visible & 1u) != 0u ? chrLuminance(shadowRay.throughput) : 0.0;
         if (CHR_CLOUD_MODE == CHR_CLOUD_MODE_VOLUMETRIC) { v *= chrCloudShadowAt(x, L); }
         if (CHR_CLOUD_MODE == CHR_CLOUD_MODE_BLOCK && v > 0.0) {
             shadowRay.throughput = vec3(1.0);
-            shadowRay.visible = 0u;
+            shadowRay.visible = 8u;   // visibility only: skip the caustics
             traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, CLOUD_MASK, 0, 0, 0, x, 0.02, L, 1000.0, 1);
             float vc = (shadowRay.visible & 1u) != 0u ? chrLuminance(shadowRay.throughput) : 0.0;
             v *= mix(1.0, vc, clamp(float(CHR_CLOUD_SHADOW_STRENGTH), 0.0, 1.0));
@@ -457,12 +483,23 @@ void applyFog(inout vec3 radiance, float dist, vec3 dir, bool hitSky, out vec3 f
         // it to Radiance's NRD compose pass, which would tint the whole picture with its own saturated blue.
         ChrPalette pal = chrPalette();
         // Clearer and lighter than the water seen from above: a pale blue-green haze.
-        vec3 absorb = chrWaterAbsorptionTinted(chrCameraWaterTint) * 0.67 + vec3(0.005);
+        vec3 absorb = chrWaterAbsorptionTinted(chrCameraWaterTint) * 0.5 + vec3(0.003) * max(float(CHR_WATER_FOG_DENSITY), 0.0);
         vec3 t = exp(-absorb * min(dist, 512.0));
-        vec3 scatter = (pal.zenith * 0.32 + pal.lightColor * 0.020 + vec3(0.0010)) * chrUnderwaterHaze();
-        fogAdd = scatter * (vec3(1.0) - t) + chrUnderwaterShafts(pal, dir, dist, absorb);
-        // The whole underwater view a little dimmer than the world above.
-        const float underwaterDim = 0.8;
+        // Keep part of the dimming neutral: with all of it coloured, everything a few blocks away turned the same
+        // cyan and lost its own colours.
+        t = mix(t, vec3(dot(t, vec3(0.2126, 0.7152, 0.0722))), 0.35);
+        // The haze glows with daylight scattered in the water, so like the cave haze it follows how much sky the
+        // camera has above it (water in a cave or under a roof stays dark), and fades with depth as less daylight
+        // gets down there.
+        float depthBelow = chrCameraSurfaceDist > 0.0 ? chrCameraSurfaceDist : 0.0;
+        vec3 daylight = exp(-absorb * depthBelow * 0.8) * chrCameraSkyAccess;
+        // Only the brightness of the sky and sun: their colour (the blue of the sky) is not what the water glows with.
+        vec3 scatter = (chrLuminance(pal.zenith) * 0.26 + chrLuminance(pal.lightColor) * 0.018) * daylight * chrUnderwaterHaze() + vec3(0.0006);
+        // Light shafts (they fade with depth themselves), coloured by the water instead of a white veil.
+        vec3 shafts = chrUnderwaterShafts(pal, dir, dist, absorb) * chrCameraSkyAccess * mix(vec3(1.0), chrUnderwaterHaze() * 1.5, 0.5);
+        fogAdd = scatter * (vec3(1.0) - t) + shafts;
+        // The whole underwater view dimmer than the world above (shallow water too: being under water is darker).
+        const float underwaterDim = 0.85;
         t *= underwaterDim;
         fogAdd *= underwaterDim;
         radiance = radiance * t + fogAdd;
@@ -482,7 +519,7 @@ void applyFog(inout vec3 radiance, float dist, vec3 dir, bool hitSky, out vec3 f
     if (worldUBO.skyType == 1u) {
         ChrPalette pal = chrPalette();
         // Clear air by day (a crisp, deep view); the haze thickens at golden hour, blue hour and in the rain.
-        float density = 0.0006 * max(float(CHR_FOG_DENSITY), 0.0) *
+        float density = 0.0004 * max(float(CHR_FOG_DENSITY), 0.0) *
                         (1.0 + 1.6 * pal.golden + 0.8 * pal.blue + 8.0 * pal.rain);
         vec3 shafts = chrAirShafts(pal, dir, hitSky ? 96.0 : dist, density);
         if (hitSky) {
@@ -492,10 +529,15 @@ void applyFog(inout vec3 radiance, float dist, vec3 dir, bool hitSky, out vec3 f
             return;
         }
         float haze = exp(-density * dist);
-        float border = 1.0 - smoothstep(fogStart, fogEnd, dist);
+        // The border fog only hides where the world ends: a short fade at the far edge of what is drawn (from CHR_BORDER_FOG_START of the way out) (the
+        // render distance, or Radiance's distant terrain beyond it), not a wide white band through the landscape.
+        float worldEdge = max(fogEnd, float(worldUBO.vistaDistanceBlocks));
+        float border = 1.0 - smoothstep(worldEdge * clamp(float(CHR_BORDER_FOG_START), 0.5, 0.995), worldEdge, dist);
         float t = haze * border;
         // Underground the haze has no daylight to scatter: dark and much thinner.
-        vec3 color = mix(vec3(0.002, 0.0025, 0.003), chrFogColor(pal, dir), chrCameraSkyAccess);
+        // The haze in front of distant land is dimmer than the bright horizon sky behind it: at full sky brightness
+        // far hills washed out into a pale glare.
+        vec3 color = mix(vec3(0.002, 0.0025, 0.003), chrFogColor(pal, dir) * 0.6, chrCameraSkyAccess);
         t = mix(1.0 - (1.0 - t) * 0.3, t, chrCameraSkyAccess);
         fogAdd = color * (1.0 - t) + shafts * border;
         radiance = radiance * t + fogAdd;
@@ -509,6 +551,23 @@ void applyFog(inout vec3 radiance, float dist, vec3 dir, bool hitSky, out vec3 f
     fogAdd = color * (1.0 - t);
     radiance = radiance * t + fogAdd;
     fogT = t;
+}
+
+// Pixel 0: is the camera inside solid ground? A camera ray straight up (and one straight down) whose first hit is
+// the back of a terrain face started inside the rock. Stored with the sky access for every pixel's next frame.
+void chrStoreCameraState(vec3 eye) {
+    if (gl_LaunchIDEXT.x != 0u || gl_LaunchIDEXT.y != 0u) { return; }
+    bool inGround = false;
+    for (int k = 0; k < 2 && !inGround; ++k) {
+        ChrRay probe;
+        initRay(eye, k == 0 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, -1.0, 0.0), worldUBO.seed ^ 0x9e3779b9u, 0.0, probe);
+        probe.state &= ~CHR_VOID_SKY_BIT;
+        prepareTrace(probe, 0u);
+        ray = probe;
+        traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, WORLD_MASK, 1, 1, MISS_WORLD, eye, 0.0001, probe.direction, 64.0, 0);
+        inGround = chrHasBit(ray, CHR_PASSED_BACKFACE_BIT);
+    }
+    imageStore(chrCameraState, ivec2(0), vec4(chrCameraSkyEased, inGround ? 1.0 : 0.0, 1.0, 0.0));
 }
 
 void main() {
@@ -525,6 +584,7 @@ void main() {
     float coneSpread = coneSpreadFromFov(fovYFromProj(worldUBO.cameraProjMat), fovXFromProj(worldUBO.cameraProjMat), resolution);
 
     // ---- Camera rays: world and first-person hand ---------------------------------------------------------
+    chrStoreCameraState(eye);
     ChrRay worldRay;
     initRay(eye, dir, worldUBO.seed, coneSpread, worldRay);
     FirstHit worldHit;
@@ -557,6 +617,7 @@ void main() {
     bool firstDiffuse = false;
     bool firstSpecular = false;
     bool transparentSplit = false;
+    bool underwaterMirror = false;
     vec3 baseEmission = vec3(0.0);
     bool hasSecondHit = false;
     float secondHitDistance = 0.0;
@@ -586,7 +647,10 @@ void main() {
         firstHitWater = waterSurface && !isHand;
         if (!isHand && mat.emission > 1e-4) { segment = SEGMENT_EMISSIVE; }
 
-        vec3 albedoGuide = mat.albedo.rgb * mat.albedo.a;
+        // Diffuse guide = the diffuse colour only. Metals have (almost) none: with their full colour here DLSS Ray
+        // Reconstruction treated a polished iron block's mirror image as diffuse light and blurred it like a wall.
+        vec3 albedoGuide = mat.albedo.rgb * mat.albedo.a * (1.0 - clamp(mat.metallic, 0.0, 1.0));
+        if (mat.metallic > 0.5) { albedoGuide = max(albedoGuide, vec3(0.02)); }
         if (chrHasBit(r, CHR_ENTITY_HIT_BIT)) {
             // DLSS Ray Reconstruction divides the light by this guide to tell texture from lighting. On strongly
             // coloured mobs (a green zombie, a cyan shirt) the weak channels are close to zero, so at the moving
@@ -597,14 +661,29 @@ void main() {
             albedoGuide = max(mix(albedoGuide, vec3(guideLuma), 0.5), vec3(0.04));
         }
         imageStore(diffuseAlbedoImage, pixel, vec4(albedoGuide, mat.metallic));
-        imageStore(specularAlbedoImage, pixel, vec4(mat.f0, transmissive ? 1.0 : 0.0));
-        imageStore(normalRoughnessImage, pixel, vec4(r.normal, mat.roughness));
+        // The water surface seen from below shows the world above or, outside Snell's window, a full mirror of the
+        // water: either way all of it is "specular" at full weight. With the placeholder F0 of 0.02 as the guide,
+        // DLSS Ray Reconstruction took the bright mirror image for noise many times too strong and smeared it into
+        // a murky, dirty-looking surface.
+        vec3 specularGuide = (waterSurface && skyUBO.cameraSubmersionType == 1u) ? vec3(1.0) : mat.f0;
+        float roughnessGuide = mat.roughness;
+        // Glass and other thin see-through blocks: the pixel shows the reflection and the view through at full
+        // weight (world.rgen mixes them itself), all of it sharp. With glass's F0 of 0.04 and its texture's roughness
+        // as the guide, DLSS Ray Reconstruction took the mirror image for noise and blurred it into a smear.
+        if (transmissive && !waterSurface) {
+            specularGuide = vec3(1.0);
+            roughnessGuide = 0.02;
+        }
+        imageStore(specularAlbedoImage, pixel, vec4(specularGuide, transmissive ? 1.0 : 0.0));
+        imageStore(normalRoughnessImage, pixel, vec4(r.normal, roughnessGuide));
         imageStore(linearDepthImage, pixel, vec4(fh.viewDepth));
         vec3 prevPos = chrRayHasPrevScenePos(r) ? r.prevScenePos : eye + dir * fh.tracedDistance + cameraDelta;
         imageStore(motionVectorImage, pixel, vec4(motionVector(prevMVP, pixelCenter, vec4(prevPos, 1.0)), 0.0, 0.0));
 
         // A whisper of light so pitch-black caves keep some shape. Real darkness is still dark.
         vec3 ambient = vec3(float(CHR_MINIMUM_LIGHT));
+        // Inside the ground (spectator): the walls around the camera get an even void light and nothing else.
+        if (chrInsideGround) { ambient += vec3(0.25); }
         if (worldUBO.skyType == 0u) {
             // The Nether has no sky; its hazy air keeps distant caverns faintly visible in the biome's colour.
             ambient += srgbToLinear(clamp(worldUBO.fogColor.rgb, vec3(0.0), vec3(1.0))) * 0.03;
@@ -622,6 +701,7 @@ void main() {
         if (noisy) {
             baseEmission = mat.albedo.rgb * mat.emission * max(float(CHR_EMISSIVE_BRIGHTNESS), 0.0) * CHR_EMISSIVE_SCALE * r.throughput;
             uint lobe = chrLobe(r);
+            underwaterMirror = chrHasBit(r, CHR_UNDERWATER_MIRROR_BIT);
             firstDiffuse = lobe == CHR_LOBE_DIFFUSE;
             firstSpecular = lobe == CHR_LOBE_SPECULAR || lobe == CHR_LOBE_TRANSMISSION;
 
@@ -647,6 +727,7 @@ void main() {
                 chrSetBit(refl, CHR_SHARP_BIT, true);
                 chrSetBit(refl, CHR_IGNORE_WATER_SELF_BIT, true);
                 chrSetBit(refl, CHR_STOP_BIT, false);
+                chrWaterSplit = true;
                 traceBounces(refl, 1u, isHand, hasReflectionHit, reflectionHitDistance);
 
                 ChrRay refr = r;
@@ -657,6 +738,7 @@ void main() {
                 bool refrHit;
                 float refrDistance;
                 traceBounces(refr, 1u, isHand, refrHit, refrDistance);
+                chrWaterSplit = false;
 
                 r.radiance = surfaceRadiance + refl.radiance + refr.radiance;
 
@@ -751,6 +833,10 @@ void main() {
     if (!skipFog) {
         float dist = hitSky ? INF_DISTANCE : length(fh.worldPos - eye);
         if (!hitSky && fh.worldPos == vec3(0.0)) { dist = fh.surfaceDepth; }
+        // Under water, looking at the mirror outside Snell's window: the reflected stretch of water is fogged here
+        // too, but only a third of it counts. With the full path the mirror vanished into the haze; this keeps the
+        // reflection readable while the far part of it still fades.
+        if (underwaterMirror && !hitSky) { dist += (hasSecondHit ? secondHitDistance : 512.0) * 0.33; }
         chrFogSeed = xxhash32(uvec3(uvec2(pixel), worldUBO.seed));
         applyFog(r.radiance, dist, dir, hitSky, fogAdd, fogT);
     }

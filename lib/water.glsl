@@ -9,20 +9,25 @@ const float CHR_WATER_ORIGIN_BIAS = 0.0008;
 
 // Absorption per block. Red goes first, which turns deep water blue-green.
 vec3 chrWaterAbsorption() {
-    // Red goes first, blue slightly faster than green: clear water turns teal rather than deep blue.
-    return vec3(0.090, 0.032, 0.040) * max(float(CHR_WATER_FOG_DENSITY), 0.0);
+    // Real water, one block = one metre: red is gone within about 5 m, orange and yellow by 10-20 m, green by about
+    // 30 m, and cyan and blue reach deepest. Slightly gentler than real water (a little warmth stays in shallow
+    // riverbeds), in the same order, so depth turns things green-cyan and then blue instead of one flat blue.
+    return vec3(0.22, 0.052, 0.032) * max(float(CHR_WATER_FOG_DENSITY), 0.0);
 }
 
 // Water coloured by its biome (swamps murky green, warm oceans turquoise, cold oceans deep blue). The biome water
-// colour (Minecraft's own per-biome value, carried by the water surface's vertex colour) is turned into an
-// absorption: the colour of the water is what it lets through. CHR_WATER_BIOME_TINT blends between the pack's
-// neutral teal water (0) and the biome colours (1).
+// colour is Minecraft's own per-biome value, carried by the water surface's vertex colour. Ordinary water
+// (Minecraft's default colour, used by rivers, plains and most oceans) keeps the pack's natural absorption above;
+// other biomes only shift it by how far their colour differs from that default. Using the biome colour directly
+// made all ordinary water a saturated deep blue. CHR_WATER_BIOME_TINT scales the shift.
+const vec3 CHR_DEFAULT_WATER_COLOR = vec3(0.247, 0.463, 0.894);   // Minecraft's default water colour, #3F76E4
+
 vec3 chrWaterAbsorptionTinted(uint packedTint) {
     vec3 neutral = chrWaterAbsorption();
     if (packedTint == 0u) { return neutral; }
     vec3 c = clamp(unpackUnorm4x8(packedTint).rgb, vec3(0.05), vec3(1.0));   // 24-bit RGB in the low bytes
-    vec3 biome = -log(c) * 0.075 * max(float(CHR_WATER_FOG_DENSITY), 0.0);
-    return mix(neutral, biome, clamp(float(CHR_WATER_BIOME_TINT), 0.0, 1.0));
+    vec3 shift = (log(CHR_DEFAULT_WATER_COLOR) - log(c)) * 0.075 * max(float(CHR_WATER_FOG_DENSITY), 0.0);
+    return max(neutral + shift * clamp(float(CHR_WATER_BIOME_TINT), 0.0, 1.0) * 1.4, vec3(0.004));
 }
 
 uint chrPackWaterTint(vec3 c) {

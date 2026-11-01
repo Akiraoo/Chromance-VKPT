@@ -11,6 +11,15 @@
   "nrd_mode": "probabilistic",
   "attributes": [
     {
+      "name": "render_pipeline.module.main_render.attribute.chr_brightness",
+      "description": "render_pipeline.module.main_render.attribute.chr_brightness.description",
+      "type": "float_range:0.1-2.0",
+      "default_value": "0.5",
+      "group": "shader_pack_settings_screen.group.lighting",
+      "performance_impact": "low",
+      "define": "CHR_BRIGHTNESS"
+    },
+    {
       "name": "render_pipeline.module.main_render.attribute.chr_indirect_bounces",
       "description": "render_pipeline.module.main_render.attribute.chr_indirect_bounces.description",
       "type": "int_range:0-4",
@@ -258,10 +267,19 @@
       "define": "CHR_FOG_DENSITY"
     },
     {
+      "name": "render_pipeline.module.main_render.attribute.chr_border_fog_start",
+      "description": "render_pipeline.module.main_render.attribute.chr_border_fog_start.description",
+      "type": "float_range:0.5-1.0",
+      "default_value": "0.92",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": "CHR_BORDER_FOG_START"
+    },
+    {
       "name": "render_pipeline.module.main_render.attribute.chr_water_fog_density",
       "description": "render_pipeline.module.main_render.attribute.chr_water_fog_density.description",
       "type": "float_range:0.0-4.0",
-      "default_value": "1.0",
+      "default_value": "0.75",
       "group": "shader_pack_settings_screen.group.atmosphere",
       "performance_impact": "low",
       "define": "CHR_WATER_FOG_DENSITY"
@@ -285,6 +303,17 @@
       "define": "CHR_WATER_WAVE_OVERLAY_STRENGTH"
     },
     {
+      "name": "render_pipeline.module.main_render.attribute.chr_water_snell_window",
+      "description": "render_pipeline.module.main_render.attribute.chr_water_snell_window.description",
+      "type": "enum:render_pipeline.module.main_render.attribute.chr_water_snell_window.real-render_pipeline.module.main_render.attribute.chr_water_snell_window.mirror-render_pipeline.module.main_render.attribute.chr_water_snell_window.clear",
+      "default_value": "render_pipeline.module.main_render.attribute.chr_water_snell_window.real",
+      "group": "shader_pack_settings_screen.group.atmosphere",
+      "performance_impact": "low",
+      "define": {
+        "CHR_WATER_SNELL_WINDOW": "uint(X)"
+      }
+    },
+    {
       "name": "render_pipeline.module.main_render.attribute.chr_water_biome_tint",
       "description": "render_pipeline.module.main_render.attribute.chr_water_biome_tint.description",
       "type": "float_range:0.0-1.0",
@@ -297,7 +326,7 @@
       "name": "render_pipeline.module.main_render.attribute.chr_water_god_rays",
       "description": "render_pipeline.module.main_render.attribute.chr_water_god_rays.description",
       "type": "float_range:0.0-2.0",
-      "default_value": "0.4",
+      "default_value": "0.2",
       "group": "shader_pack_settings_screen.group.atmosphere",
       "performance_impact": "medium",
       "define": "CHR_WATER_GOD_RAYS"
@@ -380,7 +409,7 @@
       "name": "render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength",
       "description": "render_pipeline.module.main_render.attribute.chr_cloud_shadow_strength.description",
       "type": "float_range:0.0-1.0",
-      "default_value": "0.85",
+      "default_value": "0.45",
       "group": "shader_pack_settings_screen.group.atmosphere",
       "performance_impact": "low",
       "define": "CHR_CLOUD_SHADOW_STRENGTH"
@@ -404,6 +433,24 @@
       "group": "shader_pack_settings_screen.group.materials",
       "performance_impact": "low",
       "define": "CHR_GLASS_REFLECTION"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_metal_sharpness",
+      "description": "render_pipeline.module.main_render.attribute.chr_metal_sharpness.description",
+      "type": "float_range:0.0-1.0",
+      "default_value": "0.8",
+      "group": "shader_pack_settings_screen.group.materials",
+      "performance_impact": "low",
+      "define": "CHR_METAL_SHARPNESS"
+    },
+    {
+      "name": "render_pipeline.module.main_render.attribute.chr_linear_textures",
+      "description": "render_pipeline.module.main_render.attribute.chr_linear_textures.description",
+      "type": "bool",
+      "default_value": "render_pipeline.true",
+      "group": "shader_pack_settings_screen.group.materials",
+      "performance_impact": "low",
+      "define": "CHR_LINEAR_TEXTURES"
     },
     {
       "name": "render_pipeline.module.main_render.attribute.chr_normal_map_strength",
@@ -652,6 +699,7 @@
       "width": 1,
       "height": 1,
       "shared": true,
+      "sampled_binding": 17,
       "storage_binding": 16,
       "filter": "nearest",
       "address_mode": "clamp_to_edge"
@@ -1539,8 +1587,10 @@
           "post_scene_color",
           "bloom_a",
           "bloom_b",
-          "bloom_c"
-        , "eye_exposure"]
+          "bloom_c",
+          "eye_exposure",
+          "camera_state"
+        ]
       },
       "target": "out:ldr",
       "definitions": {

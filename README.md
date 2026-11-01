@@ -47,10 +47,14 @@ and the physical quantity path tracing computes: the light travelling along ever
 - **Sun shafts**: beams of sun and moon light through leaves, buildings and cloud gaps (Tyndall effect), plus
   screen-space shafts so the beams also show over open ground.
 - **Glass**: clear, tinted when stained; with a dark room or night behind it, glass turns into a mirror like a real
-  window.
-- **Water**: clear, biome-coloured water with reflection and refraction from above and below, gentle moving waves
-  (drawn after denoising so they never freeze or smear), caustics on the sea floor, light shafts and a soft
-  blue-green haze under water, clear refracting bubbles.
+  window. Glass and metal reflections stay sharp under the denoiser; *Metal Reflection Sharpness* makes metal blocks
+  reflect more clearly than their resource pack's roughness says.
+- **Water**: clear water you can see through from above, with reflection and refraction, gentle moving waves
+  (drawn after denoising so they never freeze or smear) and a thin, scattered web of caustics on the floor.
+  Under water, colours fade with depth in the real order (red first, then yellow and green, blue last), light
+  shafts fade with depth, and the haze follows how much daylight reaches you. Looking up shows Snell's window: a
+  round window to the world above with the surface mirroring the water around it (or a clean mirror, or fully
+  clear, as you like). Special biome water (warm oceans, swamps...) keeps its colour.
 - **Rain**: wet, glossy ground with a water film, puddles and ripples that spread as several thin rings of
   different sizes, overlapping at random, on puddles and open water; clear, refracting rain streaks. The sun is
   hidden behind the rain clouds, so there are no sun shadows in rain. Only places that actually get rain and are open to the sky get wet (deserts and
@@ -65,13 +69,19 @@ and the physical quantity path tracing computes: the light travelling along ever
   own eye emission maps, without a resource pack and without lighting up the mob's body.
 - **Night vision**: the night vision effect brightens the world (including under water) with a soft lift instead
   of washing it out.
-- **Spectator mode**: flying through walls stays smooth; the rays skip the walls you are inside.
+- **Spectator mode**: inside solid ground the walls around you are drawn plainly with an even light, so flying
+  through terrain stays smooth and shows no holes to the sky.
 - **Bloom and depth of field**: soft glow around bright light; optional depth of field with autofocus (on the
   crosshair) or a fixed focus distance.
 - **Colour grading**: warm/cool split tone, filmic punch, contrast, saturation, vignette, film grain and a
   deband filter against 8-bit banding.
 - Works with Radiance's denoisers (DLSS Ray Reconstruction or NRD) and upscalers; DLSS Ray Reconstruction is
   recommended.
+- **Light that stays where it belongs**: lights only shine from their front face, and full blocks that a resource
+  pack marks as subsurface no longer let light through, so no light leaks through floors and ceilings. Glow
+  berries and other blocks that really give off light in Minecraft light their surroundings even with weak glow
+  lighting off.
+- **Linear texture colours**: textures keep their contrast and colour instead of looking pale and dusty.
 - **Far coordinates**: waves, ripples, puddles, rain, caustics and clouds stay smooth even a million blocks from the origin
   instead of breaking into a mosaic from float precision loss.
 
@@ -93,17 +103,18 @@ and the physical quantity path tracing computes: the light travelling along ever
    *Manual Exposure*, set *Manual Exposure EV* to **0**, and set *Curve Lift Limit* to **0**. Chromance's
    brightness levels are designed as final values; Radiance's automatic exposure and shadow lift otherwise
    brighten nights and rain back up to near daylight.
+5. Keep Minecraft's own *Brightness* (gamma) at its default; use the pack's *Brightness* setting instead.
 
 ## Settings overview
 
 | Group | What it controls |
 | --- | --- |
-| Lighting | Indirect bounces, sun / moon / sky strength, ambient sky light, sun shafts, shadow softness, minimum light |
+| Lighting | Overall brightness, indirect bounces, sun / moon / sky strength, ambient sky light, sun shafts, shadow softness, minimum light |
 | Block Lights | Strength, range, light rays and candidates per surface, sample limit, item and entity lights, weak glow lighting |
 | Sky & Time of Day | Sun and moon shape and size, golden hour, blue hour, night brightness and colour, night nebula |
-| Fog & Water | Haze, water murkiness, biome water colour, waves, underwater light shafts, clouds, cloud coverage, quality and shadows |
+| Fog & Water | Haze, border fog start, underwater surface (Snell's window), water murkiness, biome water colour, waves, underwater light shafts, clouds, cloud coverage, quality and shadows |
 | Rain | Wet ground, puddles, ripples, rain streak amount and opacity |
-| Materials | labPBR texture filtering, normal map strength, glass reflection |
+| Materials | labPBR texture filtering, normal map strength, glass reflection, metal reflection sharpness, linear texture colours |
 | Camera | Eye adaptation, its strength, dark limit and speed; depth of field (autofocus, focus distance, strength) |
 | Color Grading | Bloom (strength, threshold), contrast, saturation, vibrance, warm/cool split, punch, vignette, film grain |
 

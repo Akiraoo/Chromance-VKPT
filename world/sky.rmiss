@@ -26,7 +26,8 @@ void main() {
 
     bool blocked = skyUBO.cameraSubmersionType == 0u || skyUBO.cameraSubmersionType == 2u ||
                    skyUBO.hasBlindnessOrDarkness > 0u;
-    if (blocked) { return; }
+    // Camera inside the ground (spectator): no sky, clouds or stars to compute, just the void.
+    if (blocked || chrHasBit(ray, CHR_VOID_SKY_BIT)) { return; }
 
     vec3 dir = normalize(gl_WorldRayDirectionEXT);
     vec3 color = vec3(0.0);

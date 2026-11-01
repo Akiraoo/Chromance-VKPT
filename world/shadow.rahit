@@ -47,6 +47,9 @@ void main() {
         }
     }
     vec4 shaded = albedo * colorLayer;
+#if CHR_LINEAR_TEXTURES
+    shaded.rgb = srgbToLinear(clamp(shaded.rgb, vec3(0.0), vec3(1.0)));
+#endif
     float alpha = resolveSurfaceAlpha(shaded.a, alphaMode);
     if (alpha < 0.05) {
         ignoreIntersectionEXT;
@@ -69,11 +72,11 @@ void main() {
             shadowRay.throughput *= exp(-chrWaterAbsorptionTinted(shadowRay.visible >> 8u) * travelled) * 0.92;
 #if CHR_WATER_WAVE_OVERLAY
             // Caustics: the wavy surface (the same waves the overlay draws) focuses the light it lets through.
-            if (gl_WorldRayDirectionEXT.y > 0.0 && travelled > 0.0) {
+            if (gl_WorldRayDirectionEXT.y > 0.0 && travelled > 0.0 && (shadowRay.visible & 8u) == 0u) {
                 vec3 crossing = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT + chrWrappedCamera(worldUBO.cameraPos.xyz);
                 float depthBelow = travelled * gl_WorldRayDirectionEXT.y;
-                float c = chrCausticFast(crossing.xz, worldUBO.gameTime * 1200.0, depthBelow, 0.0);
-                float amount = clamp(float(CHR_WATER_WAVE_OVERLAY_STRENGTH), 0.0, 2.0) * 0.5;
+                float c = chrCausticWeb(crossing.xz, worldUBO.gameTime * 1200.0, depthBelow);
+                float amount = clamp(float(CHR_WATER_WAVE_OVERLAY_STRENGTH), 0.0, 2.0) * 0.55;
                 shadowRay.throughput *= max(mix(1.0, c, amount), 0.0);
             }
 #endif

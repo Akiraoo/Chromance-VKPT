@@ -71,6 +71,11 @@ const uint CHR_EYE_PROBE_BIT = 1u << 23u;
 const uint CHR_ENTITY_HIT_BIT = 1u << 24u;
 // The camera ray just passed the back face of solid terrain (spectator inside the ground).
 const uint CHR_PASSED_BACKFACE_BIT = 1u << 25u;
+// The ray is the camera's reflection in the water surface seen from below (outside Snell's window). The water it
+// crosses is left to the camera's water fog in world.rgen, which then covers the whole path.
+const uint CHR_UNDERWATER_MIRROR_BIT = 1u << 26u;
+// The camera is inside solid ground (spectator): rays that leave the world see a plain black void, not the sky.
+const uint CHR_VOID_SKY_BIT = 1u << 27u;
 
 const uint CHR_LOBE_DIFFUSE = 0u;
 const uint CHR_LOBE_SPECULAR = 1u;
@@ -81,6 +86,14 @@ const uint CHR_LOBE_TRANSMISSION = 2u;
 // and ChrShadowRay.visible (bits 0-2).
 uint chrRayWaterTint(ChrRay r) { return r.hasPrevScenePos >> 8u; }
 void chrSetRayWaterTint(inout ChrRay r, uint tint) { r.hasPrevScenePos = (r.hasPrevScenePos & 0xffu) | (tint << 8u); }
+// Sky light level (0-15) at the water surface the ray entered, kept in bits 1-5 as level + 1 (0 = unknown). The
+// water's own glow follows the daylight that reaches the water, not the sky light left at the floor below, which
+// drops by one level per block of water and would make deep spots turn dark in steps.
+int chrRayWaterSky(ChrRay r) { return int((r.hasPrevScenePos >> 1u) & 31u) - 1; }
+void chrSetRayWaterSky(inout ChrRay r, int level) {
+    uint v = uint(clamp(level, 0, 15) + 1);
+    r.hasPrevScenePos = (r.hasPrevScenePos & ~(31u << 1u)) | (v << 1u);
+}
 bool chrRayHasPrevScenePos(ChrRay r) { return (r.hasPrevScenePos & 1u) != 0u; }
 void chrSetRayHasPrevScenePos(inout ChrRay r, bool v) { r.hasPrevScenePos = (r.hasPrevScenePos & ~1u) | (v ? 1u : 0u); }
 

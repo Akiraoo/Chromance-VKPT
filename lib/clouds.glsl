@@ -246,6 +246,9 @@ float chrCloudShadowAt(vec3 pRel, vec3 L) {
     vec2 uv = (midXZ - chrCloudShadowCentre()) / CHR_CLOUD_SHADOW_RANGE + 0.5;
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { return 1.0; }
     float t = texture(chrCloudShadowMap, uv).r;
+    // Even under a thick cloud some sunlight gets through (and the sky around it still lights the ground): a cloud
+    // shadow dims the land, it never blacks it out.
+    t = max(t, 0.3);
     return mix(1.0, t, clamp(float(CHR_CLOUD_SHADOW_STRENGTH), 0.0, 1.0));
 }
 #endif

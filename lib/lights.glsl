@@ -95,11 +95,16 @@ float chrBlockLightFade(float dist) {
 
 // Biome tint of the water the current point is in, for shadow rays leaving through the water surface.
 uint chrShadowWaterTint = 0u;
+// Shadow rays from deeper bounces skip the caustic pattern (bit 3): it is expensive and its average is 1, so in
+// indirect light, which is blurred anyway, it only cost time.
+bool chrShadowSkipCaustics = false;
+// Minecraft's own block light level (0-15) at the surface being lit, set by the closest-hit shader.
+float chrVanillaBlockLight = 0.0;
 
 // Shadow ray toward a point (or direction when tMax is large). Returns the transmitted fraction.
 vec3 chrTraceShadow(vec3 origin, vec3 dir, float tMax, uint mask, bool insideBoat) {
     shadowRay.throughput = vec3(1.0);
-    shadowRay.visible = (insideBoat ? 2u : 0u) | (chrShadowWaterTint << 8u);
+    shadowRay.visible = (insideBoat ? 2u : 0u) | (chrShadowSkipCaustics ? 8u : 0u) | (chrShadowWaterTint << 8u);
     traceRayEXT(topLevelAS, gl_RayFlagsNoneEXT, mask, 0, 0, 0, origin, 0.0002, dir, tMax, 1);
     return (shadowRay.visible & 1u) != 0u ? shadowRay.throughput : vec3(0.0);
 }
@@ -217,7 +222,10 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
         if (fade <= 0.0) { continue; }
         vec3 l = toLight / dist;
         if (opaque && s.subsurface <= 0.0 && dot(l, ng) <= 0.0) { continue; }
-        float cosLight = abs(dot(light.normal.xyz, l));
+        // Emitters are one-sided: a face only lights what lies in front of it. Two-sided faces lit things behind
+        // them, through the block: a sea lantern's bottom face, open to a room below, lit the room above through
+        // the floor (Minecraft leaves no faces between neighbouring solid blocks for the shadow ray to hit).
+        float cosLight = dot(light.normal.xyz, -l);
         if (cosLight <= 1e-4) { continue; }
 
         vec3 f = chrEvalBrdfCos(s, n, v, l);
@@ -240,6 +248,11 @@ vec3 chrSampleBlockLight(ChrSurface s, vec3 p, vec3 n, vec3 ng, vec3 v, bool opa
             // and keep their full light. Peak radiance = pixel colour x labPBR emission.
             float peak = max(light.radiance.r, max(light.radiance.g, light.radiance.b));
             float weakKeep = clamp(float(CHR_WEAK_EMITTER_LIGHT), 0.0, 1.0);
+            // Glow berries, glow lichen and other dim blocks that really give off light in Minecraft raise the vanilla
+            // block light level around them; a resource pack's glowing ore pixels do not. Where Minecraft itself says
+            // there is a light nearby, weak glow lights as well, so glow berries light their cave while ores in the
+            // dark only glow on their own pixels.
+            weakKeep = max(weakKeep, smoothstep(6.0, 11.0, chrVanillaBlockLight));
             le *= mix(weakKeep, 1.0, smoothstep(0.15, 0.4, peak));
         }
         // Soften the inverse square close to the light (within about half a block) so the block a light is mounted on

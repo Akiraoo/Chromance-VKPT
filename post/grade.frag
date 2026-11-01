@@ -62,6 +62,8 @@ layout(set = 3, binding = 5, r8ui) readonly uniform uimage2D gradeSegmentation;
 
 // Eye adaptation state (exposure/adapt.comp); .w = night vision strength.
 layout(set = 4, binding = 10) uniform sampler2D gradeEyeState;
+// world.rgen's camera state: x = how much sky the camera has above it (eased), z = 1 once written.
+layout(set = 4, binding = 17) uniform sampler2D gradeCameraState;
 
 layout(location = 0) out vec4 outColor;
 
@@ -158,10 +160,16 @@ void main() {
             scene.rgb = pow(clamp(scene.rgb, vec3(0.0), vec3(1.0)), vec3(1.0 / (1.0 + 0.5 * nightVision)));
         }
     }
-    float rain = clamp(skyUBO.rainGradient, 0.0, 1.0) * (skyUBO.cameraSubmersionType == 3u ? 1.0 : 0.0);
+    // The rainy-day look (paler, cooler, flatter) only where the camera is out under the sky: deep in a cave it
+    // is not raining, and the cave should keep its own colours.
+    vec4 cameraState = texelFetch(gradeCameraState, ivec2(0), 0);
+    float skyAccess = cameraState.z > 0.5 ? clamp(cameraState.x, 0.0, 1.0) : 1.0;
+    float rain = clamp(skyUBO.rainGradient, 0.0, 1.0) * (skyUBO.cameraSubmersionType == 3u ? 1.0 : 0.0) *
+                 smoothstep(0.0, 0.6, skyAccess);
     vec3 color = gradeContrast(scene.rgb, float(CHR_GRADE_CONTRAST));
     vec3 linearColor = gradeSaturation(gradeToLinear(color), rain);
     linearColor *= mix(vec3(1.0), vec3(0.80, 0.86, 0.95), rain);
+
 
     // Cinematic split tone: cool shadows, warm highlights (sunlit surfaces glow, shade reads blue), stronger in
     // fair weather.

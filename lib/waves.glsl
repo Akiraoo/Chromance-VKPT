@@ -126,3 +126,69 @@ float chrCausticFast(vec2 p, float t, float depth, float lod) {
     return clamp(1.0 / max(1.0 + lap * focus, 0.3), 0.35, 2.6);
 }
 #endif
+
+#ifndef CHR_WAVES_CAUSTICS_WEB
+#define CHR_WAVES_CAUSTICS_WEB
+// Caustics on the floor under water: the web of thin bright lines that light focused by a choppy surface draws,
+// with dim cells in between. Two drifting Voronoi layers (their cell edges are the lines), bent by a slow warp so
+// no cell or line repeats, and stronger or weaker from patch to patch. Normalised so the floor gets the same light
+// on average as without caustics (the lines take light from the cells, they do not add any).
+// p: absolute XZ where the light crossed the surface, t: seconds, depth: blocks of water below the surface.
+// Returns a brightness factor around 1.
+
+float chrCausticHash(vec2 c, uint salt) {
+    uvec2 q = uvec2(ivec2(c));
+    uint h = q.x * 0x8da6b343u ^ q.y * 0xd8163841u ^ salt;
+    h ^= h >> 16u;
+    h *= 0x7feb352du;
+    h ^= h >> 15u;
+    h *= 0x846ca68bu;
+    h ^= h >> 16u;
+    return float(h) * (1.0 / 4294967295.0);
+}
+
+// Distance from p to the nearest Voronoi cell edge (F2 - F1), cells of one unit; the cell points circle slowly.
+float chrCausticEdge(vec2 p, float t, uint salt, float speed) {
+    vec2 i = floor(p);
+    float f1 = 9.0, f2 = 9.0;
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            vec2 c = i + vec2(float(ox), float(oy));
+            float a = chrCausticHash(c, salt);
+            float b = chrCausticHash(c, salt ^ 0x68e31da4u);
+            float ang = t * speed * (0.6 + 0.8 * b) + 6.2831853 * a;
+            vec2 point = c + 0.5 + 0.38 * vec2(cos(ang), sin(ang + 1.3 * a));
+            float d = length(point - p);
+            f2 = d < f1 ? f1 : min(f2, d);
+            f1 = min(f1, d);
+        }
+    }
+    return f2 - f1;
+}
+
+float chrCausticWeb(vec2 p, float t, float depth) {
+    // Faint in shallow water (the light has not travelled far enough to focus), fuller from about 3 blocks down.
+    float strength = smoothstep(0.2, 3.5, depth) * 0.8;
+    if (strength <= 0.0) { return 1.0; }
+    vec2 warp = vec2(chrWvNoise(p * 0.15 + vec2(t * 0.020, 1.7)).x, chrWvNoise(p * 0.15 + vec2(-4.3, t * 0.017)).x);
+    vec2 q = p + warp * 0.7;
+    // Deeper water: the lines are wider and softer.
+    float blur = 0.10 + 0.05 * clamp(depth, 0.0, 4.0);
+    // Cells of about 1.8 blocks, and a second layer of about 2.7 blocks.
+    float e1 = chrCausticEdge(q / 1.8, t, 0x2f6b9e1du, 0.35) * 1.8;
+    float e2 = chrCausticEdge(q / 2.7 + vec2(0.37, 0.71), t, 0x5bd1e995u, 0.25) * 2.7;
+    // Sparse: slow drifting masks let only some stretches of the lines light up, each fading in and out along its
+    // length, so the floor shows scattered bright threads instead of a complete net.
+    float m1 = 0.5 + 0.5 * chrWvNoise(p * 0.55 + vec2(t * 0.05 + 3.3, -t * 0.04)).x;
+    float m2 = 0.5 + 0.5 * chrWvNoise(p * 0.45 + vec2(-t * 0.04 - 7.1, t * 0.05 + 2.2)).x;
+    m1 = 0.08 + 0.92 * smoothstep(0.33, 0.68, m1);
+    m2 = smoothstep(0.45, 0.80, m2);
+    float web = exp(-0.5 * (e1 / blur) * (e1 / blur)) * m1 * 0.8 +
+                exp(-0.5 * (e2 / (blur * 1.3)) * (e2 / (blur * 1.3))) * m2 * 0.6;
+    web /= 0.7 * blur + 0.015;   // average of the web for this line width: normalise to 1
+    // Calm and lively patches, slowly moving.
+    float envelope = 0.55 + 0.45 * (0.5 + 0.5 * chrWvNoise(p * 0.07 + vec2(t * 0.010 + 9.1, -t * 0.013)).x);
+    float c = 0.55 + 0.45 * web;
+    return clamp(mix(1.0, c, strength * envelope), 0.3, 3.0);
+}
+#endif

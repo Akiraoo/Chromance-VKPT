@@ -99,20 +99,13 @@ void main() {
     float albedoEmission = bary.x * m0.albedoEmission + bary.y * m1.albedoEmission + bary.z * m2.albedoEmission;
     uint alphaMode = getAlphaMode(packedData);
 
-    // Spectator inside the ground: from inside solid rock every camera ray first meets the back of a cave wall. Shading
-    // those back faces sent every bounce ray wandering through the inside of the rock (no faces there to stop it),
-    // which made the frame several times slower. Solid terrain is closed, so its back faces are only ever seen from
-    // inside a block: camera rays pass through them, like Minecraft's own spectator view.
-    if (cameraSegment && bounce == 0u && isChunkGeometryBufferIndex(geometryBufferIndex) && alphaMode == ALPHA_MODE_OPAQUE &&
-        !hasWaterMaterial(m0) && dot(m0.norm, v) < -0.01) {
-        ray.origin = hitPos + gl_WorldRayDirectionEXT * 0.001;
-        ray.hitT = hitT;
-        ray.coneWidth += hitT * ray.coneSpread;
-        chrSetBit(ray, CHR_CONTINUE_BIT, true);
-        chrSetBit(ray, CHR_PASSED_BACKFACE_BIT, true);
-        chrSetBit(ray, CHR_STOP_BIT, false);
-        return;
-    }
+    // Spectator inside the ground: from inside solid rock every camera ray first meets the back of a cave wall or of
+    // the ground's surface. Seeing through it (Minecraft's own x-ray view) showed scattered holes to the sky, cost a
+    // lot of frame rate and lit nothing. Instead that first back face is drawn as a plain wall around the camera,
+    // lit only by an even "void light" (world.rgen), with no sun, block lights or bounces.
+    bool xrayFace = cameraSegment && bounce == 0u && isChunkGeometryBufferIndex(geometryBufferIndex) &&
+                    alphaMode == ALPHA_MODE_OPAQUE && !hasWaterMaterial(m0) && dot(m0.norm, v) < -0.01;
+    if (xrayFace) { chrSetBit(ray, CHR_PASSED_BACKFACE_BIT, true); }
 
     mat3 objectToWorld = mat3(gl_ObjectToWorld3x4EXT);
     mat3 normalMatrix = transpose(mat3(gl_WorldToObject3x4EXT));
@@ -166,6 +159,12 @@ void main() {
     } else {
         albedoTex.a = resolveSurfaceAlpha(colorLayer.a, alphaMode);
     }
+    // The water surface seen from below: the face Minecraft adds so the surface shows from under water does not
+    // always carry the water flag, and was then treated as a thin pane of glass, which let the world above show
+    // through at every angle. A flat see-through face met by a ray that is travelling through water is the surface.
+    if (!isWater && chrHasBit(ray, CHR_IN_WATER_BIT) && alphaMode == ALPHA_MODE_TRANSPARENT && abs(ng.y) > 0.7) {
+        isWater = true;
+    }
     // Face the viewer.
     if (dot(ng, v) < 0.0) { ng = -ng; }
 
@@ -177,6 +176,11 @@ void main() {
         glint *= glint;
     }
     vec3 tint = albedoTex.rgb * colorLayer.rgb;
+#if CHR_LINEAR_TEXTURES
+    // Texture colours are stored in sRGB; lighting works in linear light. Converting them keeps their contrast and
+    // colour; used as they are, every texture looks pale and dusty.
+    tint = srgbToLinear(clamp(tint, vec3(0.0), vec3(1.0)));
+#endif
     if (hasOverlay(packedData)) {
         vec4 overlay = sampleTexture(textures[nonuniformEXT(worldUBO.overlayTextureID)], m0.overlayUV, 0, false);
         tint = mix(overlay.rgb, tint, overlay.a);
@@ -184,6 +188,12 @@ void main() {
     tint += glint;
 
     ChrLabPbr m = chrDecodeLabPbr(vec4(tint, albedoTex.a), specularTex, normalTex);
+    // Metal blocks (iron, gold, copper...): resource packs often give them a fair amount of roughness, which made
+    // polished metal look like a hazy, out-of-focus mirror. Their roughness is scaled down by the setting.
+    if (m.metallic > 0.5) {
+        m.perceptualRoughness = max(m.perceptualRoughness * (1.0 - 0.75 * clamp(float(CHR_METAL_SHARPNESS), 0.0, 1.0)), 0.03);
+        m.alpha = m.perceptualRoughness * m.perceptualRoughness;
+    }
 
     // Distant (Vista) terrain marks whole material classes as emissive, which made far grass glow at night.
     // Keep that glow only for lava-coloured surfaces.
@@ -226,6 +236,10 @@ void main() {
     } else if (CHR_FLAT_SURFACE == 0 && useTexture && mapping.entries[m0.textureID].normal >= 0) {
         n = chrApplyNormalMap(m.tangentNormal, dPdu, dPdv, ng, v);
     }
+    if (xrayFace) {
+        if (dot(ng, v) < 0.0) { ng = -ng; }
+        n = ng;
+    }
 
     // Thin translucent surfaces (stained glass, ice, slime) do not bend light.
     bool thinTransmissive = !isWater && m.transmission > 0.0;
@@ -265,16 +279,34 @@ void main() {
     }
 
     // ---- Water volume the ray just crossed ------------------------------------------------------------------
-    if (chrHasBit(ray, CHR_IN_WATER_BIT) && !cameraSegment) {
+    bool mirrorSegment = chrHasBit(ray, CHR_UNDERWATER_MIRROR_BIT);
+    chrSetBit(ray, CHR_UNDERWATER_MIRROR_BIT, false);
+    if (chrHasBit(ray, CHR_IN_WATER_BIT) && !cameraSegment && !mirrorSegment) {
         vec3 transmittance = exp(-chrWaterAbsorptionTinted(chrRayWaterTint(ray)) * hitT);
         ChrPalette palWater = chrPalette();
         // The blue-green glow of the water itself is daylight scattered inside it: only where the sky reaches. Water
         // in a dark cave (an underground lake, a waterfall in a ravine) has no daylight to scatter and stays dark,
         // lit only by whatever real light reaches it.
         float skyHere = (bary.x * float(m0.lightUV.y) + bary.y * float(m1.lightUV.y) + bary.z * float(m2.lightUV.y)) / 16.0;
-        float daylightIn = smoothstep(1.0, 13.0, skyHere);
+        int surfaceSky = chrRayWaterSky(ray);
+        if (surfaceSky >= 0) { skyHere = float(surfaceSky); }
+        // Water in the shade of a cave or ravine glows less than under open sky, but gently: Minecraft's sky light
+        // changes block by block, and a steep curve turned that into blocky steps and a black band under overhangs.
+        // Only fully sealed water (sky light 0) goes dark.
+        float daylightIn = smoothstep(0.0, 1.5, skyHere) * mix(0.25, 1.0, smoothstep(2.0, 15.0, skyHere));
         vec3 ambient = (palWater.zenith * 0.6 + palWater.lightColor * 0.05) * vec3(0.18, 0.42, 0.40) * daylightIn;
-        ray.radiance += ray.throughput * ambient * (1.0 - transmittance);
+        if (skyUBO.cameraSubmersionType == 1u) {
+            // Camera under water: water crossed by its reflections (the mirror outside Snell's window) and bounces
+            // glows like the water haze around the camera (world.rgen, applyFog). The brighter, greener glow used for
+            // water seen from above made everything in the mirror look washed out and whitish.
+            ambient = (dot(palWater.zenith, vec3(0.2126, 0.7152, 0.0722)) * 0.26 +
+                       dot(palWater.lightColor, vec3(0.2126, 0.7152, 0.0722)) * 0.018) *
+                      vec3(0.17, 0.48, 0.70) * 0.85 * daylightIn;
+        }
+        // Water seen from above is simply clear: no glow of its own, only what is under it, dimmed and tinted by
+        // the water it crosses. (Its own glow followed Minecraft's block-by-block sky light and drew blocky steps
+        // and dark bands across pools in caves and ravines.) Under water the camera's haze does that job instead.
+        if (skyUBO.cameraSubmersionType == 1u) { ray.radiance += ray.throughput * ambient * (1.0 - transmittance); }
         ray.throughput *= transmittance;
     }
 
@@ -354,6 +386,11 @@ void main() {
     s.alpha = m.alpha;
     s.metallic = m.metallic;
     s.subsurface = m.subsurface;
+    // Light shining through from the back (labPBR subsurface) is for thin things: leaves, grass, flowers, vines.
+    // Some packs also mark full blocks (quartz, wool, sea lanterns...) as subsurface; on a solid cube that let
+    // sunlight and block light pass straight through a whole block, so a ceiling was lit from the far side and went
+    // dark as soon as something was placed on top of it. Full opaque blocks get no back lighting.
+    if (alphaMode == ALPHA_MODE_OPAQUE) { s.subsurface = 0.0; }
     s.ao = m.ao;
     if (thinTransmissive) {
         // Glass gets no diffuse light; its reflection is picked up by the reflection ray.
@@ -368,6 +405,7 @@ void main() {
 
     ChrPalette pal = chrPalette();
     chrShadowWaterTint = chrRayWaterTint(ray);
+    chrShadowSkipCaustics = bounce > 0u;
     // Sun and moon, graded by how open this spot is to the sky (Minecraft's sky light level, 15 under open sky,
     // dropping by one per block into overhangs, caves and rooms):
     //   open (12 and up): the full calculation, as outdoors;
@@ -378,13 +416,21 @@ void main() {
     float skyLevelHere = (bary.x * float(m0.lightUV.y) + bary.y * float(m1.lightUV.y) + bary.z * float(m2.lightUV.y)) / 16.0;
     vec4 cameraState = imageLoad(chrCameraStateIn, ivec2(0));
     bool cameraUnderground = cameraState.z > 0.5 && cameraState.x < 0.5;
-    float sunChance = skyLevelHere >= 12.0 ? 1.0 : mix(0.25, 1.0, clamp(skyLevelHere / 12.0, 0.0, 1.0));
-    if (skyLevelHere < 0.5) { sunChance = cameraUnderground ? 0.0 : 1.0; }
+    float sunChance = skyLevelHere >= 12.0 ? 1.0 : mix(0.3, 1.0, clamp(skyLevelHere / 12.0, 0.0, 1.0));
+    // Sealed spots: no sun underground; with the camera outdoors a quarter of them still trace it (weighted up), so a
+    // wrongly reported level cannot black out a sunlit spot, at a quarter of the cost inside caves seen from outside.
+    // Sealed spots by Minecraft's count still trace the sun now and then (weighted up to match): its sky light changes
+    // block by block, and cutting the sun off exactly where it reads 0 drew hard block-shaped edges between sunlit and
+    // black water and floor near cave openings. The shadow ray decides; a few rays keep the cost low deep inside.
+    if (skyLevelHere < 0.5) { sunChance = cameraUnderground ? 0.12 : 0.25; }
     vec3 direct = vec3(0.0);
+    if (xrayFace) { sunChance = 0.0; }
     if (sunChance >= 1.0 || (sunChance > 0.0 && rand(ray.seed) < sunChance)) {
         direct = chrSampleCelestialLight(pal, s, hitPos, n, ng, v, opaque, insideBoat, ray.seed) / sunChance;
     }
-    if (bounce < uint(CHR_BLOCK_LIGHT_BOUNCES) && !isWater) {
+    // Vanilla block light level here (0-15): tells the light sampler whether a real light source is close by.
+    chrVanillaBlockLight = (bary.x * float(m0.lightUV.x) + bary.y * float(m1.lightUV.x) + bary.z * float(m2.lightUV.x)) / 16.0;
+    if (bounce < uint(CHR_BLOCK_LIGHT_BOUNCES) && !isWater && !xrayFace) {
         // Several independent light samples on the surface the camera sees (less noise for the denoiser to
         // smear); one on deeper bounces.
         int lightSamples = bounce == 0u ? clamp(int(CHR_BLOCK_LIGHT_SAMPLES), 1, 8) : 1;
@@ -423,18 +469,35 @@ void main() {
         vec3 refracted = refract(-v, nn, eta);
         bool canRefract = dot(refracted, refracted) > 1e-6;
         if (fromInside) {
-            // Looking up from under water: always see through the surface (no total internal reflection). The
-            // bending fades out towards the critical angle, so there is no hard ring where refraction stops.
-            vec3 straight = -v;
-            if (canRefract) {
-                vec3 rd = normalize(refracted);
-                float bendFade = smoothstep(0.0, 0.6, abs(dot(rd, nn)));
-                nextDir = normalize(mix(straight, rd, bendFade));
+            if (CHR_WATER_SNELL_WINDOW != 2u) {
+                // Looking up from under water: only a round window straight overhead shows the world above (Snell's
+                // window); beyond the critical angle the surface is a mirror of the water and the floor (total
+                // internal reflection). The waves keep the window's rim moving.
+                // Real (0): inside the window part of the light is still reflected (Fresnel), more towards its edge.
+                // Mirror (1): a clean window, fully clear inside and a full mirror outside.
+                bool reflectIt = !canRefract || (CHR_WATER_SNELL_WINDOW == 0u && rand(ray.seed) < fresnel);
+                if (reflectIt) {
+                    nextDir = reflect(-v, nn);
+                    lobe = CHR_LOBE_SPECULAR;
+                    chrSetBit(ray, CHR_UNDERWATER_MIRROR_BIT, cameraSegment);
+                } else {
+                    nextDir = normalize(refracted);
+                    lobe = CHR_LOBE_TRANSMISSION;
+                }
             } else {
-                nextDir = straight;
+                // Clear (2): always see through the surface. The bending fades out towards the critical angle, so
+                // there is no hard ring where refraction stops.
+                vec3 straight = -v;
+                if (canRefract) {
+                    vec3 rd = normalize(refracted);
+                    float bendFade = smoothstep(0.0, 0.6, abs(dot(rd, nn)));
+                    nextDir = normalize(mix(straight, rd, bendFade));
+                } else {
+                    nextDir = straight;
+                }
+                lobe = CHR_LOBE_TRANSMISSION;
             }
             weight = vec3(1.0);
-            lobe = CHR_LOBE_TRANSMISSION;
         } else {
             bool reflectIt = !canRefract || (bounce > 0u && rand(ray.seed) < fresnel);
             if (reflectIt) {
@@ -455,6 +518,8 @@ void main() {
             if (!fromInside) {
                 uint tint = chrPackWaterTint(colorLayer.rgb);
                 if (tint != 0u) { chrSetRayWaterTint(ray, tint); }
+                int waterSky = 15;
+                chrSetRayWaterSky(ray, waterSky);
             }
         }
         bias = CHR_WATER_ORIGIN_BIAS;
